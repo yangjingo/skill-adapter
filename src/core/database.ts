@@ -16,6 +16,19 @@ export interface EvolutionRecord {
   telemetryData: string;  // JSON
   patches: string;  // JSON
   evaluationResult?: string;  // JSON
+
+  // Security evaluation fields
+  securityScanResult?: string;  // JSON - SecurityScanResult
+  securityPassed?: boolean;
+
+  // Sharing fields
+  registryId?: string;
+  publishedAt?: Date;
+  importSource?: string;
+
+  // Discovery fields
+  discoveredFrom?: string;      // Source platform
+  appliedInsights?: string[];   // Applied insight IDs
 }
 
 export class EvolutionDatabase {

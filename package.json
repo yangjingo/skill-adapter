@@ -1,6 +1,6 @@
 {
   "name": "skill-adapter",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Making Skills Evolve within your Workspace - A evolution management layer for Claude Code and OpenClaw",
   "main": "dist/index.js",
   "bin": {
@@ -9,23 +9,35 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js",
-    "dev": "ts-node src/cli.ts"
+    "dev": "ts-node src/cli.ts",
+    "test": "node tests/run-tests.js",
+    "test:cli": "node tests/test-cli.js",
+    "test:security": "node tests/test-security.js",
+    "test:versioning": "node tests/test-versioning.js",
+    "test:registry": "node tests/test-registry.js"
   },
   "keywords": [
     "claude-code",
     "openclaw",
     "skill",
     "evolution",
-    "adapter"
+    "adapter",
+    "security",
+    "sharing",
+    "discovery"
   ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/archiver": "^6.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "commander": "^12.0.0"
+    "commander": "^12.0.0",
+    "js-yaml": "^4.1.0",
+    "archiver": "^7.0.0"
   }
 }

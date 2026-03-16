@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Skill(ralph-loop:ralph-loop)",
+      "Bash(cd:*)",
+      "WebFetch(domain:skill.sh)",
+      "WebFetch(domain:clawhub.com)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "mcp__plugin_playwright_playwright__browser_tabs",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "Bash(sleep:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(ls:*)",
+      "Bash(echo:*)",
+      "Bash(head:*)"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}

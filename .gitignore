@@ -25,6 +25,22 @@ npm-debug.log*
 
 # Database
 evolution.db
+*.db-journal
+*.db-wal
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Cache
+.cache/
+
+# Test
+coverage/
+
+# Registry data
+registry-server/data/
+registry-server/node_modules/
+
+# Temporary files
+*.tmp
+*.temp

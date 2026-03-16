@@ -15,5 +15,25 @@ export { EvolutionDatabase, EvolutionRecord } from './core/database';
 // Report modules
 export { SummaryGenerator, summaryGenerator } from './report/summary';
 
+// Security modules
+export { SecurityEvaluator, securityEvaluator, SecurityPatterns, PermissionValidators, SecurityReporters } from './core/security';
+export * from './types/security';
+
+// Sharing modules
+export { SkillPackageManager, skillPackageManager, SkillExporter, skillExporter, SkillRegistry, skillRegistry } from './core/sharing';
+export * from './types/sharing';
+
+// Discovery modules
+export { PlatformFetcher, platformFetcher, SkillAnalyzer, skillAnalyzer, RecommendationEngine, recommendationEngine } from './core/discovery';
+export * from './types/discovery';
+
+// Versioning modules
+export { VersionManager, versionManager } from './core/versioning';
+export * from './types/versioning';
+
+// Config modules
+export { AgentDetector, agentDetector } from './core/config';
+export * from './types/config';
+
 // Version
-export const VERSION = '1.0.0';
+export const VERSION = '1.2.0';
