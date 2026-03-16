@@ -1,0 +1,138 @@
+# Skill-Adapter
+
+> **让技能在你的工作空间中进化。**
+
+`Skill-Adapter` 是一个为 **Claude Code** 和 **OpenClaw** 设计的进化管理层。它不仅负责 Skill 的本地化适配，更通过 **Workspace 规则感知**与 **Session 行为回溯**，实现工具能力的自我迭代与效能评估。
+
+[English](./README.md)
+
+---
+
+## 核心初衷
+
+* **环境适配 (Context-Aware):** 消除公共 Skill 与私有工作空间（Workspace）之间的"信息差"。
+* **会话进化 (Session-Driven):** 自动捕获用户在对话中对 Skill 的修正，并将其固化为本地 Patch。
+* **效能闭环 (Evaluation-Based):** 所有的改进必须通过量化数据（成本、轮数、调用次数）来证明其价值。
+
+---
+
+## 核心功能
+
+### 1. Workspace 深度绑定
+
+* **空间隔离：** 自动将 `OpenClaw` 的 Workspace 路径约束注入 Skill，防止越权操作。
+* **技术栈对齐：** 实时感知项目源码，动态调整 Skill 的操作偏好（如：优先处理 `.ts` 文件）。
+
+### 2. Session 进化引擎 (The Refiner)
+
+* **行为学习：** 自动分析 `Claude Code` 的 Session 日志，提取用户对手动修正的意图。
+* **自适应补丁：** 自动更新 Skill 的 System Prompt 或执行逻辑，实现"越用越顺手"。
+
+### 3. 进化效能评估
+
+系统会对进化前后的 Skill 进行多维度对比，生成**效能总结报告**：
+
+* **成本评估 (Cost):** 统计 Token 消耗（Input/Output）的升降。
+* **执行密度 (Efficiency):** 统计完成相同任务所需的**工具调用次数**。
+* **交互质量 (User Friction):** 统计达成目标所需的**用户对话轮数**。
+* **上下文负载 (Context Load):** 监控环境注入对 Context Window 的占用。
+
+---
+
+## 快速开始
+
+### 安装
+
+```bash
+npm install -g skill-adapter
+```
+
+### 1. 适配并安装
+
+```bash
+sa install https://github.com/public/fs-skill.git
+```
+
+### 2. 执行进化与评估
+
+在使用一段时间后，运行进化命令：
+
+```bash
+sa evolve --last 10 --analyze
+```
+
+### 3. 查看效能总结
+
+```bash
+sa summary fs-skill
+```
+
+---
+
+## CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `sa install <url>` | 从 URL 安装 Skill |
+| `sa evolve --last N --analyze` | 运行进化分析 |
+| `sa summary <skill-name>` | 查看效能总结 |
+| `sa list` | 列出所有跟踪的 Skill |
+| `sa workspace` | 分析当前工作空间 |
+| `sa patch <action>` | 管理 Skill 补丁 |
+
+---
+
+## 评估报告示例
+
+执行 `sa summary` 后，你将得到如下反馈：
+
+| 指标 | 原始版本 (v1.0) | 进化版本 (v1.1) | 变化 | 状态 |
+|------|-----------------|-----------------|------|------|
+| **平均对话轮数** | 5.2 轮 | 2.1 轮 | **-60%** | ✅ 极速达成 |
+| **工具调用次数** | 15 次 | 6 次 | **-60%** | ✅ 路径更精准 |
+| **Token 消耗** | 12.4k | 8.8k | **-29%** | ✅ 成本优化 |
+| **上下文占用** | 1.1k | 2.3k | **+109%** | ⚠️ 环境注入较多 |
+
+> **进化结论：** 通过注入 Workspace 路径规则，成功减少了 Skill 在无效目录下的盲目检索。虽然初始上下文有所增加，但显著降低了用户手动纠错的成本。
+
+---
+
+## 目录结构
+
+```
+skill-adapter/
+├── src/
+│   ├── core/
+│   │   ├── analyzer.ts     # Session 语义分析
+│   │   ├── patcher.ts      # Skill 注入引擎
+│   │   ├── workspace.ts    # 空间规则解析
+│   │   ├── evaluator.ts    # 进化效果评估
+│   │   ├── telemetry.ts    # 数据采集 (Token/Calls/Rounds)
+│   │   └── database.ts     # 进化数据存储
+│   └── report/
+│       └── summary.ts      # 生成 Markdown 评估总结
+├── package.json
+├── tsconfig.json
+└── evolution.db            # 存储进化轨迹与版本对比数据
+```
+
+---
+
+## 开发
+
+```bash
+# 安装依赖
+npm install
+
+# 构建
+npm run build
+
+# 开发模式
+npm run dev
+```
+
+---
+
+## 许可证
+
+MIT
