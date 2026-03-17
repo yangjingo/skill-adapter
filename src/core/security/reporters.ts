@@ -34,6 +34,7 @@ export class SecurityReporters {
 
   /**
    * Generate text report
+   * Based on skill-vetter protocol from clawhub.com/spclaudehome/skill-vetter
    */
   generateTextReport(result: SecurityScanResult): string {
     const lines: string[] = [];
@@ -60,14 +61,36 @@ export class SecurityReporters {
     lines.push(`Summary: ${result.riskAssessment.summary}`);
     lines.push('');
 
-    // Sensitive Information Findings
-    if (result.sensitiveInfoFindings.length > 0) {
+    // RED FLAGS Section (skill-vetter style)
+    const redFlags = [...result.dangerousOperationFindings, ...result.sensitiveInfoFindings]
+      .filter(f => f.severity === 'high');
+
+    if (redFlags.length > 0) {
+      lines.push('─'.repeat(40));
+      lines.push('  🚨 RED FLAGS');
+      lines.push('─'.repeat(40));
+      lines.push('');
+
+      for (const flag of redFlags) {
+        const desc = 'description' in flag ? flag.description : flag.type;
+        lines.push(`  [HIGH] ${flag.type}`);
+        lines.push(`    Description: ${desc}`);
+        if (flag.location.line) {
+          lines.push(`    Location: Line ${flag.location.line}`);
+        }
+        lines.push('');
+      }
+    }
+
+    // Sensitive Information Findings (non-high)
+    const sensitiveNonHigh = result.sensitiveInfoFindings.filter(f => f.severity !== 'high');
+    if (sensitiveNonHigh.length > 0) {
       lines.push('─'.repeat(40));
       lines.push('  SENSITIVE INFORMATION FINDINGS');
       lines.push('─'.repeat(40));
       lines.push('');
 
-      for (const finding of result.sensitiveInfoFindings) {
+      for (const finding of sensitiveNonHigh) {
         lines.push(`  [${finding.severity.toUpperCase()}] ${finding.type}`);
         lines.push(`    Pattern: ${finding.pattern}`);
         if (finding.location.line) {
@@ -79,14 +102,15 @@ export class SecurityReporters {
       }
     }
 
-    // Dangerous Operation Findings
-    if (result.dangerousOperationFindings.length > 0) {
+    // Dangerous Operation Findings (non-high)
+    const dangerousNonHigh = result.dangerousOperationFindings.filter(f => f.severity !== 'high');
+    if (dangerousNonHigh.length > 0) {
       lines.push('─'.repeat(40));
       lines.push('  DANGEROUS OPERATIONS');
       lines.push('─'.repeat(40));
       lines.push('');
 
-      for (const finding of result.dangerousOperationFindings) {
+      for (const finding of dangerousNonHigh) {
         lines.push(`  [${finding.severity.toUpperCase()}] ${finding.type}`);
         lines.push(`    Description: ${finding.description}`);
         if (finding.location.line) {
@@ -114,6 +138,14 @@ export class SecurityReporters {
       }
     }
 
+    // Risk Classification (skill-vetter style)
+    lines.push('─'.repeat(40));
+    lines.push('  RISK CLASSIFICATION');
+    lines.push('─'.repeat(40));
+    lines.push('');
+    lines.push(`  ${this.getRiskClassification(result.riskAssessment.overallRisk, redFlags.length)}`);
+    lines.push('');
+
     // Recommendations
     if (result.riskAssessment.recommendations.length > 0) {
       lines.push('─'.repeat(40));
@@ -127,12 +159,17 @@ export class SecurityReporters {
       lines.push('');
     }
 
-    // Final Status
+    // Final Verdict
     lines.push('═'.repeat(60));
     if (result.passed) {
       lines.push('  ✓ SCAN PASSED');
+      lines.push('  ✅ SAFE TO INSTALL');
+    } else if (redFlags.length > 0) {
+      lines.push('  ✗ SCAN FAILED');
+      lines.push('  ❌ DO NOT INSTALL');
     } else {
-      lines.push('  ✗ SCAN FAILED - Security issues detected');
+      lines.push('  ⚠ SCAN PASSED WITH WARNINGS');
+      lines.push('  ⚠️ INSTALL WITH CAUTION');
     }
     lines.push('═'.repeat(60));
 
@@ -455,6 +492,27 @@ export class SecurityReporters {
         return '![Low](https://img.shields.io/badge/Low-green)';
       default:
         return severity;
+    }
+  }
+
+  /**
+   * Get risk classification text (skill-vetter style)
+   * Reference: https://clawhub.com/spclaudehome/skill-vetter
+   */
+  private getRiskClassification(overallRisk: string, redFlagsCount: number): string {
+    if (redFlagsCount > 0) {
+      return '⛔ EXTREME - Security red flags detected, do not install';
+    }
+
+    switch (overallRisk) {
+      case 'high':
+        return '🔴 HIGH - Requires human approval before installation';
+      case 'medium':
+        return '🟡 MEDIUM - Full code review required';
+      case 'low':
+        return '🟢 LOW - Basic review completed, install OK';
+      default:
+        return '⚪ UNKNOWN - Review recommended';
     }
   }
 }

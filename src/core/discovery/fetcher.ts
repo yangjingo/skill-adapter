@@ -23,6 +23,7 @@ interface PlatformEndpoint {
   trending?: string;
   hot?: string;
   all?: string;
+  leaderboard?: string;
 }
 
 /**
@@ -30,19 +31,21 @@ interface PlatformEndpoint {
  */
 const PLATFORM_ENDPOINTS: Record<RegistryType, PlatformEndpoint> = {
   clawhub: {
-    base: 'https://clawhub.ai',
+    base: 'https://clawhub.com',
     skills: '/api/skills',
     search: '/api/skills',
     popular: '/api/skills?sort=downloads',
-    trending: '/api/skills?sort=updated'
+    trending: '/api/skills?sort=updated',
+    leaderboard: '/api/leaderboard'
   },
   'skills-sh': {
     base: 'https://skills.sh',
     skills: '/api/skills',
     search: '/api/search',
-    hot: '/api/hot',
-    trending: '/api/trending',
-    all: '/api/all'
+    hot: '/api/leaderboard/hot',
+    trending: '/api/leaderboard/trending',
+    all: '/api/leaderboard/all',
+    leaderboard: '/api/leaderboard'
   },
   custom: {
     base: '',
@@ -66,10 +69,46 @@ export class PlatformFetcher {
   }
 
   /**
-   * Fetch hot skills from platforms
+   * Fetch hot skills from all platforms
    */
-  async fetchHot(platform: RegistryType = 'skills-sh', limit: number = 20): Promise<LeaderboardEntry[]> {
-    const skills = await this.fetchLeaderboard('hot', platform, limit);
+  async fetchHot(platform: string = 'skills-sh', limit: number = 20): Promise<LeaderboardEntry[]> {
+    // If 'all', fetch from both platforms
+    if (platform === 'all') {
+      const results = await Promise.allSettled([
+        this.fetchLeaderboard('hot', 'skills-sh', limit),
+        this.fetchLeaderboard('hot', 'clawhub', limit)
+      ]);
+
+      const skills: RemoteSkill[] = [];
+      results.forEach(result => {
+        if (result.status === 'fulfilled') {
+          skills.push(...result.value);
+        }
+      });
+
+      // Sort by downloads and dedupe
+      const seen = new Set<string>();
+      const unique = skills.filter(s => {
+        if (seen.has(s.name)) return false;
+        seen.add(s.name);
+        return true;
+      });
+
+      // If no results from platforms, return mock data
+      if (unique.length === 0) {
+        return this.convertToLeaderboard(this.getMockLeaderboardData('hot', limit));
+      }
+
+      return this.convertToLeaderboard(unique.slice(0, limit));
+    }
+
+    const skills = await this.fetchLeaderboard('hot', platform as RegistryType, limit);
+
+    // If no results, return mock data
+    if (skills.length === 0) {
+      return this.convertToLeaderboard(this.getMockLeaderboardData('hot', limit));
+    }
+
     return this.convertToLeaderboard(skills);
   }
 
@@ -165,25 +204,30 @@ export class PlatformFetcher {
     let url: string;
 
     if (platform === 'skills-sh') {
+      // skills.sh uses /api/leaderboard/* endpoints
       const pathMap: Record<string, string> = {
-        'hot': endpoints.hot || '/api/hot',
-        'trending': endpoints.trending || '/api/trending',
-        'all-time': endpoints.all || '/api'
+        'hot': endpoints.leaderboard || '/api/leaderboard/hot',
+        'trending': '/api/leaderboard/trending',
+        'all-time': '/api/leaderboard/all'
       };
       url = `${endpoints.base}${pathMap[type]}`;
-    } else {
+    } else if (platform === 'clawhub') {
+      // clawhub uses /api/skills with sort params
       const pathMap: Record<string, string> = {
-        'hot': endpoints.popular || '/api/skills?sort=downloads',
+        'hot': endpoints.leaderboard || '/api/leaderboard',
         'trending': endpoints.trending || '/api/skills?sort=updated',
         'all-time': endpoints.skills || '/api/skills'
       };
       url = `${endpoints.base}${pathMap[type]}?limit=${limit}`;
+    } else {
+      url = `${endpoints.base}/api/leaderboard`;
     }
 
     try {
       const response = await this.fetchWithTimeout(url);
       if (!response.ok) {
-        throw new Error(`Failed to fetch leaderboard: ${response.statusText}`);
+        // Return empty array silently - caller will combine with other platforms
+        return [];
       }
 
       const data = await response.json();
@@ -192,8 +236,8 @@ export class PlatformFetcher {
       this.setCache(cacheKey, skills);
       return skills.slice(0, limit);
     } catch (error) {
-      console.error(`Failed to fetch leaderboard from ${platform}: ${error}`);
-      return this.getMockLeaderboardData(type, limit);
+      // Return empty array silently - caller will combine with other platforms
+      return [];
     }
   }
 
@@ -266,7 +310,7 @@ export class PlatformFetcher {
           stars: item.stars ? Number(item.stars) : undefined
         },
         tags: Array.isArray(item.tags || item.keywords) ? (item.tags || item.keywords) as string[] : [],
-        url: String(item.url || `https://${platform === 'clawhub' ? 'clawhub.ai' : 'skills.sh'}/skills/${item.name}`)
+        url: String(item.url || `https://${platform === 'clawhub' ? 'clawhub.com' : 'skills.sh'}/skills/${item.name}`)
       });
     }
 
@@ -366,7 +410,7 @@ export class PlatformFetcher {
         platform: 'clawhub',
         stats: { downloads: 227000, change24h: 500, rating: 4.9 },
         tags: ['agent', 'learning', 'improvement'],
-        url: 'https://clawhub.ai/skills/self-improving-agent'
+        url: 'https://clawhub.com/skills/self-improving-agent'
       },
       {
         name: 'api-gateway',
@@ -376,7 +420,7 @@ export class PlatformFetcher {
         platform: 'clawhub',
         stats: { downloads: 44800, change24h: 200, rating: 4.5 },
         tags: ['api', 'oauth', 'integration'],
-        url: 'https://clawhub.ai/skills/api-gateway'
+        url: 'https://clawhub.com/skills/api-gateway'
       }
     ];
 

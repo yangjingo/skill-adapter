@@ -37,6 +37,28 @@
 * **交互质量 (User Friction):** 统计达成目标所需的**用户对话轮数**。
 * **上下文负载 (Context Load):** 监控环境注入对 Context Window 的占用。
 
+### 4. 安全扫描 (Security Scanning)
+
+内置安全扫描功能，在执行或分享前检测潜在恶意模式。此功能灵感来源于 [skill-vetter](https://github.com/nickg/skill-vetter)。
+
+**检测的安全模式：**
+
+| 类别 | 检测模式 |
+|------|----------|
+| **危险命令** | `rm -rf`、`sudo rm`、`mkfs`、`dd if=` |
+| **网络操作** | `curl ... sh`、`wget ... \| bash`、反向 Shell |
+| **权限提升** | `chmod 777`、`chown root`、`sudo su` |
+| **数据泄露** | `curl -F`、`wget --post-file`、Base64 上传 |
+| **持久化** | Cron 任务、启动脚本、服务安装 |
+
+```bash
+# 扫描技能文件
+sa scan ./my-skill.md
+
+# 导入时自动扫描
+sa import ./suspicious-skill.md  # 发现问题会发出警告
+```
+
 ---
 
 ## 快速开始

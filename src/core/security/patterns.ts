@@ -100,6 +100,7 @@ export const SENSITIVE_PATTERNS: DetectionPattern[] = [
 
 /**
  * Predefined dangerous operation patterns
+ * Includes patterns from skill-vetter security protocol
  */
 export const DANGEROUS_PATTERNS: DetectionPattern[] = [
   {
@@ -165,6 +166,119 @@ export const DANGEROUS_PATTERNS: DetectionPattern[] = [
     severity: 'medium',
     description: 'Environment variable modification detected',
     recommendation: 'Be cautious when modifying environment variables'
+  },
+  // ========== skill-vetter RED FLAGS ==========
+  {
+    name: 'curl_wget_unknown',
+    pattern: /(?:curl|wget)\s+(?!https?:\/\/(github\.com|gitlab\.com|bitbucket\.org|npmjs\.com|pypi\.org))/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: curl/wget to unknown URLs',
+    recommendation: 'REJECT: Downloading from untrusted sources'
+  },
+  {
+    name: 'external_data_upload',
+    pattern: /(?:curl|wget|fetch|axios|http)\s+.*(?:--data|-d|--upload-file|-T|body|data:)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Sends data to external servers',
+    recommendation: 'REJECT: Skills should not send data externally without clear reason'
+  },
+  {
+    name: 'credential_request',
+    pattern: /(?:credential|password|api[_-]?key|token|secret|auth).*(?:prompt|input|readline|ask|request)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Requests credentials/tokens/API keys',
+    recommendation: 'REJECT: Skills should not request credentials directly'
+  },
+  {
+    name: 'sensitive_file_access',
+    pattern: /~\/\.(?:ssh|aws|config|gnupg|kube|docker|env)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Reads sensitive system files (~/.ssh, ~/.aws, etc.)',
+    recommendation: 'REJECT: Accessing sensitive directories requires clear justification'
+  },
+  {
+    name: 'identity_file_access',
+    pattern: /(?:MEMORY\.md|USER\.md|SOUL\.md|IDENTITY\.md|CLAUDE\.md)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Accesses agent identity files',
+    recommendation: 'REJECT: Skills should not access agent identity files'
+  },
+  {
+    name: 'base64_decode',
+    pattern: /(?:atob\(|Buffer\.from\([^)]*,\s*['"]base64['"]\)|base64\.decode|b64decode)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Uses base64 decode',
+    recommendation: 'REJECT: Obfuscated code is suspicious'
+  },
+  {
+    name: 'eval_external_input',
+    pattern: /(?:eval|Function|exec|compile)\s*\([^)]*(?:req\.|input|prompt|stdin|readFile|fetch)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Uses eval() or exec() with external input',
+    recommendation: 'REJECT: Code injection risk'
+  },
+  {
+    name: 'system_file_modification',
+    pattern: /(?:\/etc\/|\/usr\/|\/bin\/|\/sbin\/|C:\\Windows\\|C:\\Program Files\\)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Modifies system files outside workspace',
+    recommendation: 'REJECT: Should not modify system files'
+  },
+  {
+    name: 'hidden_package_install',
+    pattern: /(?:npm\s+install|pip\s+install|yarn\s+add|cargo\s+install)\s+(?!.*--save|--save-dev|-g)/gi,
+    type: 'dangerous',
+    severity: 'medium',
+    description: '⚠️ WARNING: Installs packages without listing them',
+    recommendation: 'Review: All dependencies should be declared'
+  },
+  {
+    name: 'ip_network_call',
+    pattern: /(?:\d{1,3}\.){3}\d{1,3}:\d+/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Network calls to IPs instead of domains',
+    recommendation: 'REJECT: Suspicious network behavior'
+  },
+  {
+    name: 'obfuscated_code',
+    pattern: /(?:\\x[0-9a-f]{2}|\\u[0-9a-f]{4}|fromCharCode|String\.fromCharCode)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Obfuscated code detected',
+    recommendation: 'REJECT: Code should be readable'
+  },
+  {
+    name: 'sudo_request',
+    pattern: /(?:sudo|runas|elevated|administrator|root\s)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Requests elevated/sudo permissions',
+    recommendation: 'REJECT: Skills should run with minimal privileges'
+  },
+  {
+    name: 'browser_cookie_access',
+    pattern: /(?:cookie|session|localStorage|sessionStorage|document\.cookie)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Accesses browser cookies/sessions',
+    recommendation: 'REJECT: Should not access browser credentials'
+  },
+  {
+    name: 'credential_file_access',
+    pattern: /(?:credentials\.json|\.netrc|_netrc|\.pgpass|\.my\.cnf)/gi,
+    type: 'dangerous',
+    severity: 'high',
+    description: '🚨 RED FLAG: Touches credential files',
+    recommendation: 'REJECT: Should not access credential files'
   }
 ];
 

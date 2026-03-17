@@ -126,6 +126,42 @@ Config stored at `~/.skill-adapter.json`:
 
 ---
 
+## Security Scanning
+
+Skill-Adapter includes built-in security scanning to detect potentially malicious patterns in skills before execution or sharing. This feature is inspired by [skill-vetter](https://github.com/nickg/skill-vetter).
+
+### Security Patterns Detected
+
+| Category | Patterns |
+|----------|----------|
+| **Dangerous Commands** | `rm -rf`, `sudo rm`, `mkfs`, `dd if=` |
+| **Network Operations** | `curl ... sh`, `wget ... | bash`, reverse shells |
+| **Privilege Escalation** | `chmod 777`, `chown root`, `sudo su` |
+| **Data Exfiltration** | `curl -F`, `wget --post-file`, base64 uploads |
+| **Persistence** | cron jobs, startup scripts, service installation |
+
+### Usage
+
+```bash
+# Scan a skill file
+sa scan ./my-skill.md
+
+# Scan with verbose output
+sa scan ./my-skill.md --verbose
+
+# Scan during import (automatic)
+sa import ./suspicious-skill.md  # Will warn if issues found
+```
+
+### Integration with Evolution
+
+Security scanning is automatically integrated into the evolution workflow:
+- Skills with security issues get flagged before export
+- Evolution suggestions include security improvements
+- Version tags reflect security fixes (`v1.2.1-security-2`)
+
+---
+
 ## Registry Integration
 
 Skill-Adapter can work with any compliant registry. See [Registry Integration Guide](./docs/REGISTRY_INTEGRATION.md) for building your own registry.

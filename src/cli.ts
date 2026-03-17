@@ -41,6 +41,36 @@ import { agentDetector } from './core/config';
 
 const program = new Command();
 
+// ANSI color codes for terminal output
+const COLORS = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  // skills.sh - Cyan
+  skillsSh: '\x1b[36m',  // Cyan
+  skillsShBg: '\x1b[46m\x1b[30m', // Cyan background with black text
+  // clawhub.com - Magenta
+  clawhub: '\x1b[35m',  // Magenta
+  clawhubBg: '\x1b[45m\x1b[37m', // Magenta background with white text
+  // Other colors
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  dim: '\x1b[2m',
+};
+
+/**
+ * Format platform source with color and bold
+ */
+function formatSource(platform: string): string {
+  if (platform === 'skills-sh' || platform === 'skills.sh') {
+    return `${COLORS.bold}${COLORS.skillsShBg} skills.sh ${COLORS.reset}`;
+  }
+  if (platform === 'clawhub' || platform === 'clawhub.com') {
+    return `${COLORS.bold}${COLORS.clawhubBg} clawhub.com ${COLORS.reset}`;
+  }
+  return platform;
+}
+
 // Configuration - supports env vars and config file
 const CONFIG = {
   skillsRepo: process.env.SKILL_ADAPTER_REPO || 'https://codehub-g.huawei.com/leow3lab/ascend-skills',
@@ -121,33 +151,116 @@ program
   .option('--no-scan', 'Skip security scan')
   .option('--registry <url>', 'Custom registry URL')
   .option('-l, --limit <number>', 'Limit results when discovering', '10')
-  .option('-p, --platform <platform>', 'Platform for discovery (skills-sh, clawhub)', 'skills-sh')
-  .action(async (source: string | undefined, options: { name?: string; scan: boolean; registry?: string; limit: string; platform: string }) => {
+  .option('-p, --platform <platform>', 'Platform for discovery (skills-sh, clawhub, all)', 'all')
+  .option('--no-npx', 'Use built-in import instead of official CLI', false)
+  .action(async (source: string | undefined, options: { name?: string; scan: boolean; registry?: string; limit: string; platform: string; noNpx: boolean }) => {
     // No source provided - show hot skills (discover mode)
     if (!source) {
-      console.log('🔥 Discovering hot skills...\n');
+      console.log('🔥 Discovering hot skills from skills.sh and clawhub.com...\n');
 
       try {
-        const results = await platformFetcher.fetchHot(options.platform as 'skills-sh' | 'clawhub', parseInt(options.limit));
+        // Always fetch from all platforms
+        const results = await platformFetcher.fetchHot('all', parseInt(options.limit));
 
-        console.log('Rank | Downloads | Change | Skill');
-        console.log('-'.repeat(50));
+        console.log('Rank | Downloads | Source      | Skill');
+        console.log('-'.repeat(65));
 
         for (const entry of results) {
-          const change = entry.change > 0 ? `+${entry.change}` : String(entry.change);
-          console.log(`#${entry.rank.toString().padEnd(4)} | ${entry.skill.stats.downloads.toString().padEnd(9)} | ${change.padEnd(6)} | ${entry.skill.name}`);
+          const sourceFormatted = formatSource(entry.skill.platform);
+          console.log(`#${entry.rank.toString().padEnd(4)} | ${entry.skill.stats.downloads.toString().padEnd(9)} | ${sourceFormatted}  | ${entry.skill.name}`);
         }
 
-        console.log('\n💡 Use `sa import <skill-name>` to install a skill.');
-        console.log('💡 Use `sa import <path-or-url>` to import from file/URL.');
+        console.log('\n📌 下一步操作:');
+        console.log('   sa import find-skills            # 使用官方 CLI 安装（默认）');
+        console.log('   sa import find-skills --no-npx   # 使用内置导入');
+        console.log('   # 自动识别平台: skills.sh / clawhub.com');
       } catch (error) {
-        console.error(`❌ Failed to fetch skills: ${error}`);
+        console.error(`❌ 获取技能失败: ${error}`);
       }
       return;
     }
 
     // Source provided - import mode
     console.log(`📥 Getting skill from: ${source}\n`);
+
+    // Check if it's a local file/directory first
+    const isLocalPath = fs.existsSync(source);
+    const isOpenClawSkill = (() => {
+      const openClawPath = findOpenClawSkillsPath();
+      if (openClawPath) {
+        const localSkillDir = path.join(openClawPath, source);
+        return fs.existsSync(localSkillDir) && fs.statSync(localSkillDir).isDirectory();
+      }
+      return false;
+    })();
+
+    // Use official CLI for remote skills (default), unless --no-npx or local path
+    const useOfficialCli = !options.noNpx && !isLocalPath && !isOpenClawSkill && !source.startsWith('http');
+
+    if (useOfficialCli) {
+      console.log('🔧 使用官方 CLI 安装...\n');
+      try {
+        const { execSync } = require('child_process');
+
+        // Search to determine which platform has this skill
+        const searchResults = await platformFetcher.search(source, { limit: 3 });
+
+        let command = '';
+        let platform = '';
+        let skillName = source;
+
+        if (searchResults.length > 0) {
+          const found = searchResults[0];
+          skillName = found.name;
+
+          if (found.platform === 'skills-sh') {
+            // skills.sh uses: npx skills add owner/repo
+            const repo = found.repository || source;
+            command = `npx skills add ${repo}`;
+            platform = 'skills.sh';
+            console.log(`   平台: ${platform}`);
+            console.log(`   仓库: ${repo}\n`);
+          } else if (found.platform === 'clawhub') {
+            // ClawHub uses: npx clawhub@latest install skill-name
+            command = `npx clawhub@latest install ${found.name}`;
+            platform = 'clawhub.com';
+            console.log(`   平台: ${platform}`);
+            console.log(`   技能: ${found.name}\n`);
+          }
+        } else {
+          // No search results - try both platforms
+          console.log(`   未找到技能 "${source}"`);
+          console.log(`   尝试从两个平台安装...\n`);
+
+          // Try clawhub first (more likely for generic names)
+          command = `npx clawhub@latest install ${source}`;
+          platform = 'clawhub.com';
+        }
+
+        console.log(`$ ${command}\n`);
+        execSync(command, { stdio: 'inherit' });
+
+        console.log('\n✅ 安装成功!');
+        console.log('\n📌 下一步操作:');
+        console.log('   sa info              # 查看所有已安装技能');
+        console.log('   sa evolve <skill>    # 分析并优化技能');
+        return;
+      } catch (error) {
+        // Official CLI failed - give helpful suggestions
+        console.error('\n❌ 官方 CLI 安装失败\n');
+        console.log('💡 可能的原因和解决方案:\n');
+        console.log('   1. 技能名称不正确');
+        console.log('      sa import                    # 查看热门技能列表\n');
+        console.log('   2. 网络问题或仓库不存在');
+        console.log('      检查技能是否存在于 skills.sh 或 clawhub.com\n');
+        console.log('   3. 需要完整的仓库路径 (skills.sh)');
+        console.log('      sa import vercel-labs/agent-skills\n');
+        console.log('📌 手动安装命令:');
+        console.log(`   npx skills add owner/repo-name     # skills.sh`);
+        console.log(`   npx clawhub@latest install <name>   # clawhub.com`);
+        return;
+      }
+    }
 
     const db = new EvolutionDatabase('evolution.db');
 
@@ -237,29 +350,121 @@ program
           skillPackage = skillExporter.importFromFile(source, { rename: options.name, validateSecurity: options.scan });
         }
       } else {
-        // Assume it's a skill name from registry
+        // Assume it's a skill name - check local first, then search remote
         sourceType = 'registry-name';
-        console.log('🔍 Detected: Registry skill name');
 
-        const registryUrl = options.registry || 'http://localhost:3000';
-        const name = options.name || source;
+        // First, check if it's a local OpenClaw skill
+        const openClawPath = findOpenClawSkillsPath();
+        if (openClawPath) {
+          const localSkillDir = path.join(openClawPath, source);
+          if (fs.existsSync(localSkillDir) && fs.statSync(localSkillDir).isDirectory()) {
+            console.log('🔍 Found local OpenClaw skill\n');
+            const skillMdPath = path.join(localSkillDir, 'SKILL.md');
 
-        // Try to download from registry
-        const downloadUrl = `${registryUrl}/api/skills/${source}/download`;
-        console.log(`📦 Downloading from registry...`);
+            let systemPrompt = '';
+            if (fs.existsSync(skillMdPath)) {
+              systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
+            }
 
-        try {
-          const response = await fetch(downloadUrl);
-          if (response.ok) {
+            const skillName = options.name || source;
             skillPackage = {
               id: `skill_${Date.now()}`,
-              manifest: { name, version: '1.0.0', description: '', author: 'unknown', license: 'MIT', keywords: [], compatibility: { platforms: ['claude-code'] } },
-              content: { systemPrompt: `# ${name}\n\nSkill imported from registry` },
+              manifest: {
+                name: skillName,
+                version: '1.0.0',
+                description: `OpenClaw skill: ${source}`,
+                author: 'openclaw',
+                license: 'MIT',
+                keywords: [],
+                compatibility: { platforms: ['openclaw', 'claude-code'] }
+              },
+              content: { systemPrompt },
               metadata: { createdAt: new Date(), updatedAt: new Date() }
             };
+            sourceType = 'openclaw';
           }
-        } catch {
-          console.log('⚠ Could not connect to registry, using local cache');
+        }
+
+        // If not found locally, search remote platforms
+        if (!skillPackage) {
+          console.log('🔍 Searching from skills.sh and clawhub.com...\n');
+
+          // Search from both platforms
+          const searchResults = await platformFetcher.search(source, { limit: 5 });
+
+          if (searchResults.length === 0) {
+            // Fallback to registry download
+            const registryUrl = options.registry || 'http://localhost:3000';
+            const downloadUrl = `${registryUrl}/api/skills/${source}/download`;
+            console.log(`📦 No results found, trying local registry...`);
+
+            try {
+              const response = await fetch(downloadUrl);
+              if (response.ok) {
+                skillPackage = {
+                  id: `skill_${Date.now()}`,
+                  manifest: { name: source, version: '1.0.0', description: '', author: 'unknown', license: 'MIT', keywords: [], compatibility: { platforms: ['claude-code'] } },
+                  content: { systemPrompt: `# ${source}\n\nSkill imported from registry` },
+                  metadata: { createdAt: new Date(), updatedAt: new Date() }
+                };
+                sourceType = 'local-registry';
+              }
+            } catch {
+              console.log('⚠ Could not find skill in any registry');
+            }
+          } else if (searchResults.length === 1) {
+            // Single result - use it directly
+            const found = searchResults[0];
+            console.log(`📥 Found: ${found.name} from ${formatSource(found.platform)}`);
+            console.log(`   ${found.description}\n`);
+
+            // Fetch skill content
+            const content = await platformFetcher.fetchSkillContent(found);
+            skillPackage = {
+              id: `skill_${Date.now()}`,
+              manifest: {
+                name: found.name,
+                version: '1.0.0',
+                description: found.description,
+                author: found.owner,
+                license: 'MIT',
+                keywords: found.tags,
+                compatibility: { platforms: ['claude-code'] }
+              },
+              content: { systemPrompt: content || `# ${found.name}\n\n${found.description}` },
+              metadata: { createdAt: new Date(), updatedAt: new Date(), source: found.platform }
+            };
+            sourceType = found.platform;
+          } else {
+            // Multiple results - show all with platform source
+            console.log(`📋 Found ${searchResults.length} matching skills:\n`);
+            searchResults.forEach((s, i) => {
+              console.log(`  ${i + 1}. ${s.name} from ${formatSource(s.platform)} - ${s.stats.downloads} downloads`);
+              console.log(`     ${s.description}`);
+            });
+            console.log('');
+
+            // Use the first result (most popular)
+            const found = searchResults[0];
+            console.log(`📦 Importing: ${found.name} from ${formatSource(found.platform)}\n`);
+
+            const content = await platformFetcher.fetchSkillContent(found);
+            skillPackage = {
+              id: `skill_${Date.now()}`,
+              manifest: {
+                name: found.name,
+                version: '1.0.0',
+                description: found.description,
+                author: found.owner,
+                license: 'MIT',
+                keywords: found.tags,
+                compatibility: { platforms: ['claude-code'] }
+              },
+              content: { systemPrompt: content || `# ${found.name}\n\n${found.description}` },
+              metadata: { createdAt: new Date(), updatedAt: new Date(), source: found.platform }
+            };
+            sourceType = found.platform;
+          }
         }
       }
 
@@ -292,6 +497,17 @@ program
         return;
       }
 
+      // Determine source label
+      const getSourceLabel = (type: string, originalSource?: string): string => {
+        if (type === 'skills-sh') return 'skills.sh';
+        if (type === 'clawhub') return 'clawhub.com';
+        if (type === 'openclaw') return `OpenClaw:${originalSource || ''}`;
+        if (type === 'local-registry') return 'local registry';
+        if (type === 'file') return 'local file';
+        if (type === 'url') return 'URL';
+        return type;
+      };
+
       db.addRecord({
         id: EvolutionDatabase.generateId(),
         skillName: skillPackage.manifest.name,
@@ -299,14 +515,21 @@ program
         timestamp: new Date(),
         telemetryData: JSON.stringify([]),
         patches: JSON.stringify(skillPackage.content.patches || []),
-        importSource: source
+        importSource: getSourceLabel(sourceType, source)
       });
 
-      console.log(`✅ Skill "${skillPackage.manifest.name}" (v${skillPackage.manifest.version}) installed successfully!`);
-      console.log(`   Run \`sa info ${skillPackage.manifest.name}\` to learn more.`);
+      const sourceLabel = getSourceLabel(sourceType, source).split(':')[0];
+      console.log(`\n✅ 安装成功!`);
+      console.log(`   技能: ${skillPackage.manifest.name} (v${skillPackage.manifest.version})`);
+      console.log(`   来源: ${sourceLabel}`);
+
+      console.log('\n📌 下一步操作:');
+      console.log(`   sa info ${skillPackage.manifest.name}       # 查看技能详情`);
+      console.log(`   sa evolve ${skillPackage.manifest.name}     # 分析并优化技能`);
+      console.log(`   sa log ${skillPackage.manifest.name}        # 查看版本历史`);
 
     } catch (error) {
-      console.error(`❌ Failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`❌ 失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
 
@@ -395,8 +618,10 @@ program
         }
       }
 
-      console.log('💡 Use `sa info <skill>` for details.');
-      console.log('💡 Use `sa info -p imported` to see only imported skills.');
+      console.log('\n📌 下一步操作:');
+      console.log('   sa info <skill-name>       # 查看具体技能详情');
+      console.log('   sa info -p imported        # 只显示已导入的技能');
+      console.log('   sa import <skill-name>     # 导入新技能');
 
     } else {
       // Detail mode - show specific skill info
@@ -425,7 +650,57 @@ program
           }
         }
 
-        console.log('\n💡 Run `sa evolve ' + skillName + '` to analyze improvements.');
+        // If imported from OpenClaw, show detailed info
+        if (latestRecord.importSource?.startsWith('OpenClaw:')) {
+          const originalDir = latestRecord.importSource.split(':')[1] || skillName;
+          const openClawPath = findOpenClawSkillsPath();
+          if (openClawPath) {
+            const skillDir = path.join(openClawPath, originalDir);
+            if (fs.existsSync(skillDir)) {
+              // Read SKILL.md
+              const skillMdPath = path.join(skillDir, 'SKILL.md');
+              if (fs.existsSync(skillMdPath)) {
+                const systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
+                console.log(`\n── System Prompt ──`);
+                console.log(`Size: ${(systemPrompt.length / 1024).toFixed(1)} KB`);
+                console.log(`Lines: ${systemPrompt.split('\n').length}`);
+              }
+
+              // Show directory tree
+              console.log(`\n── Directory Tree ──`);
+              const showTree = (dir: string, prefix: string = '', maxDepth = 3, currentDepth = 0) => {
+                if (currentDepth >= maxDepth) return;
+                const items = fs.readdirSync(dir).filter(i => !i.startsWith('.'));
+                items.forEach((item, index) => {
+                  const itemPath = path.join(dir, item);
+                  const isLast = index === items.length - 1;
+                  const prefixChar = isLast ? '└── ' : '├── ';
+                  const newPrefix = prefix + (isLast ? '    ' : '│   ');
+                  const stat = fs.statSync(itemPath);
+
+                  let info = item;
+                  if (stat.isDirectory()) {
+                    info += '/';
+                  } else {
+                    info += ` (${(stat.size / 1024).toFixed(1)} KB)`;
+                  }
+
+                  console.log(prefix + prefixChar + info);
+
+                  if (stat.isDirectory()) {
+                    showTree(itemPath, newPrefix, maxDepth, currentDepth + 1);
+                  }
+                });
+              };
+              showTree(skillDir);
+            }
+          }
+        }
+
+        console.log('\n📌 下一步操作:');
+        console.log(`   sa evolve ${skillName}        # 分析并优化技能`);
+        console.log(`   sa log ${skillName}           # 查看版本历史`);
+        console.log(`   sa share ${skillName}         # 分享技能`);
         return;
       }
 
@@ -599,7 +874,8 @@ program
   .description('Run evolution analysis')
   .option('-l, --last <n>', 'Analyze last N sessions', '10')
   .option('--apply', 'Apply suggested improvements', false)
-  .action((skillName: string | undefined, options: { last: string; apply: boolean }) => {
+  .option('--detail', 'Show detailed analysis', false)
+  .action((skillName: string | undefined, options: { last: string; apply: boolean; detail: boolean }) => {
     console.log('🔄 Running evolution analysis...\n');
 
     const db = new EvolutionDatabase('evolution.db');
@@ -611,56 +887,435 @@ program
         return;
       }
 
-      console.log(`Analyzing: ${skillName}`);
-      console.log(`Records: ${records.length}`);
-      console.log(`Current version: ${db.getLatestVersion(skillName)}`);
+      console.log(`📦 Analyzing: ${skillName}`);
+      console.log(`   Version: ${db.getLatestVersion(skillName)}`);
+      console.log(`   Records: ${records.length}\n`);
 
-      // Calculate version bump based on metrics
-      const metrics = {
-        tokenReduction: Math.random() * 30, // Mock data
-        callReduction: Math.random() * 20
-      };
+      // Get skill source info
+      const latestRecord = records[records.length - 1];
+      const importSource = latestRecord.importSource || '';
 
-      const versionChange = versionManager.calculateNewVersion(
-        db.getLatestVersion(skillName) || '1.0.0',
-        metrics
-      );
+      // ═══════════════════════════════════════════
+      // STEP 1: Analyze Workspace
+      // ═══════════════════════════════════════════
+      console.log('📊 Step 1: Workspace Analysis');
+      console.log('─'.repeat(50));
 
-      console.log(`\n📊 Suggested version: ${versionChange.newTag}`);
-      console.log(`   Reason: ${versionChange.changeSummary}`);
+      const workspaceAnalyzer = new WorkspaceAnalyzer(process.cwd());
+      const workspaceConfig = workspaceAnalyzer.analyze();
 
+      console.log(`   Root: ${process.cwd()}`);
+      console.log(`   Languages: ${workspaceConfig.techStack.languages.join(', ') || 'None detected'}`);
+      console.log(`   Frameworks: ${workspaceConfig.techStack.frameworks.join(', ') || 'None detected'}`);
+      console.log(`   Package Manager: ${workspaceConfig.techStack.packageManager}`);
+      console.log(`   Build Tools: ${workspaceConfig.techStack.buildTools.join(', ') || 'None'}`);
+
+      // ═══════════════════════════════════════════
+      // STEP 2: Analyze Skill Content
+      // ═══════════════════════════════════════════
+      console.log('\n📋 Step 2: Skill Content Analysis');
+      console.log('─'.repeat(50));
+
+      let skillContent = '';
+      let skillDir = '';
+
+      // Check if it's from OpenClaw
+      if (importSource.startsWith('OpenClaw:') || importSource.toLowerCase().includes('openclaw')) {
+        const openClawPath = findOpenClawSkillsPath();
+        if (openClawPath) {
+          // Extract original directory name
+          let originalDir = skillName;
+          if (importSource.startsWith('OpenClaw:')) {
+            originalDir = importSource.split(':')[1] || skillName;
+          }
+          skillDir = path.join(openClawPath, originalDir);
+          const skillMdPath = path.join(skillDir, 'SKILL.md');
+          if (fs.existsSync(skillMdPath)) {
+            skillContent = fs.readFileSync(skillMdPath, 'utf-8');
+          }
+        }
+      }
+
+      if (skillContent) {
+        const lines = skillContent.split('\n');
+        const sections = lines.filter(l => l.startsWith('#')).length;
+        const codeBlocks = (skillContent.match(/```/g) || []).length / 2;
+        const references = (skillContent.match(/\[.*?\]\(.*?\)/g) || []).length;
+
+        console.log(`   Content Size: ${(skillContent.length / 1024).toFixed(1)} KB`);
+        console.log(`   Lines: ${lines.length}`);
+        console.log(`   Sections: ${sections}`);
+        console.log(`   Code Blocks: ${codeBlocks}`);
+        console.log(`   References: ${references}`);
+      } else {
+        console.log('   No skill content available for analysis');
+      }
+
+      // ═══════════════════════════════════════════
+      // STEP 3: Analyze Environment
+      // ═══════════════════════════════════════════
+      console.log('\n🔧 Step 3: Environment Analysis');
+      console.log('─'.repeat(50));
+
+      // Check OpenClaw config
+      const openClawPath = findOpenClawSkillsPath();
+      if (openClawPath) {
+        console.log(`   OpenClaw Skills: ${openClawPath}`);
+        const skills = fs.readdirSync(openClawPath).filter(f =>
+          fs.statSync(path.join(openClawPath, f)).isDirectory()
+        );
+        console.log(`   Available Skills: ${skills.length}`);
+      }
+
+      // Check Claude Code config
+      const claudeCodePath = findClaudeCodeSkillsPath();
+      if (claudeCodePath) {
+        console.log(`   Claude Code: ${claudeCodePath}`);
+        const commandsPath = path.join(claudeCodePath, 'commands');
+        const skillsPath = path.join(claudeCodePath, 'skills');
+        if (fs.existsSync(commandsPath)) {
+          const commands = fs.readdirSync(commandsPath).filter(f => f.endsWith('.md'));
+          console.log(`   Commands: ${commands.length}`);
+        }
+        if (fs.existsSync(skillsPath)) {
+          const skillDirs = fs.readdirSync(skillsPath).filter(f =>
+            fs.statSync(path.join(skillsPath, f)).isDirectory()
+          );
+          console.log(`   Skills: ${skillDirs.length}`);
+        }
+      }
+
+      // ═══════════════════════════════════════════
+      // STEP 4: Generate Optimization Suggestions
+      // ═══════════════════════════════════════════
+      console.log('\n💡 Step 4: Optimization Suggestions');
+      console.log('─'.repeat(50));
+
+      interface OptimizationSuggestion {
+        category: string;
+        suggestion: string;
+        reason: string;
+        priority: 'high' | 'medium' | 'low';
+        autoApplicable: boolean;
+      }
+
+      const suggestions: OptimizationSuggestion[] = [];
+
+      // Analyze workspace vs skill compatibility
+      if (workspaceConfig.techStack.languages.length > 0) {
+        suggestions.push({
+          category: 'Language Context',
+          suggestion: `Add ${workspaceConfig.techStack.languages[0]}-specific examples and patterns`,
+          reason: `Workspace uses ${workspaceConfig.techStack.languages.join(', ')}`,
+          priority: 'high',
+          autoApplicable: false
+        });
+      }
+
+      if (workspaceConfig.techStack.frameworks.length > 0) {
+        suggestions.push({
+          category: 'Framework Integration',
+          suggestion: `Include ${workspaceConfig.techStack.frameworks[0]} best practices`,
+          reason: `Detected ${workspaceConfig.techStack.frameworks.join(', ')} framework`,
+          priority: 'high',
+          autoApplicable: false
+        });
+      }
+
+      // Analyze package manager
+      const pkgManager = workspaceConfig.techStack.packageManager;
+      if (pkgManager !== 'npm') {
+        suggestions.push({
+          category: 'Package Manager',
+          suggestion: `Update commands to use ${pkgManager} instead of npm`,
+          reason: `Workspace uses ${pkgManager} as package manager`,
+          priority: 'medium',
+          autoApplicable: true
+        });
+      }
+
+      // Analyze skill content
+      if (skillContent) {
+        if (skillContent.length > 10000) {
+          suggestions.push({
+            category: 'Content Optimization',
+            suggestion: 'Consider splitting into multiple focused sections',
+            reason: `Large content size (${(skillContent.length / 1024).toFixed(1)} KB) may impact performance`,
+            priority: 'medium',
+            autoApplicable: false
+          });
+        }
+
+        if (!skillContent.includes('```')) {
+          suggestions.push({
+            category: 'Code Examples',
+            suggestion: 'Add code examples for better clarity',
+            reason: 'No code blocks found in skill content',
+            priority: 'low',
+            autoApplicable: false
+          });
+        }
+
+        // Check for workspace-specific paths
+        if (skillContent.includes('/home/') || skillContent.includes('/Users/')) {
+          suggestions.push({
+            category: 'Path Localization',
+            suggestion: 'Replace absolute paths with workspace-relative paths',
+            reason: 'Hardcoded paths may not work in current environment',
+            priority: 'high',
+            autoApplicable: true
+          });
+        }
+
+        // Check for npm usage when workspace uses different package manager
+        if (pkgManager !== 'npm' && skillContent.includes('npm ')) {
+          suggestions.push({
+            category: 'Package Manager',
+            suggestion: `Replace npm commands with ${pkgManager}`,
+            reason: `Workspace uses ${pkgManager}, skill references npm`,
+            priority: 'medium',
+            autoApplicable: true
+          });
+        }
+
+        // Check for Python environment
+        if (skillContent.includes('python ') || skillContent.includes('pip ')) {
+          suggestions.push({
+            category: 'Python Environment',
+            suggestion: 'Consider using virtual environment or conda',
+            reason: 'Skill references Python, ensure environment is configured',
+            priority: 'medium',
+            autoApplicable: false
+          });
+        }
+
+        // Check for Docker usage
+        if (skillContent.includes('docker ') || skillContent.includes('Dockerfile')) {
+          suggestions.push({
+            category: 'Docker Integration',
+            suggestion: 'Verify Docker is installed and running',
+            reason: 'Skill uses Docker containers',
+            priority: 'medium',
+            autoApplicable: false
+          });
+        }
+
+        // Check for shell scripts
+        if (skillContent.includes('.sh') || skillContent.includes('bash ')) {
+          suggestions.push({
+            category: 'Shell Compatibility',
+            suggestion: 'Verify shell scripts are compatible with current OS',
+            reason: 'Skill contains shell scripts that may need adaptation',
+            priority: 'low',
+            autoApplicable: false
+          });
+        }
+
+        // Check for environment variables
+        const envVars = skillContent.match(/\$\{?[A-Z_]+[A-Z_0-9]*\}?/g);
+        if (envVars && envVars.length > 0) {
+          const uniqueVars = [...new Set(envVars)];
+          suggestions.push({
+            category: 'Environment Variables',
+            suggestion: `Ensure these env vars are set: ${uniqueVars.slice(0, 3).join(', ')}${uniqueVars.length > 3 ? '...' : ''}`,
+            reason: `Skill requires ${uniqueVars.length} environment variable(s)`,
+            priority: 'high',
+            autoApplicable: false
+          });
+        }
+
+        // Check for API keys or secrets placeholders
+        if (skillContent.includes('API_KEY') || skillContent.includes('TOKEN') || skillContent.includes('SECRET')) {
+          suggestions.push({
+            category: 'Security',
+            suggestion: 'Configure sensitive credentials securely',
+            reason: 'Skill references API keys, tokens, or secrets',
+            priority: 'high',
+            autoApplicable: false
+          });
+        }
+
+        // Check for network dependencies
+        if (skillContent.includes('http://') || skillContent.includes('https://')) {
+          const urls = skillContent.match(/https?:\/\/[^\s\)]+/g);
+          if (urls && urls.length > 0) {
+            suggestions.push({
+              category: 'Network Access',
+              suggestion: 'Verify network connectivity to external services',
+              reason: `Skill connects to ${urls.length} external URL(s)`,
+              priority: 'medium',
+              autoApplicable: false
+            });
+          }
+        }
+      } else {
+        // No skill content available
+        suggestions.push({
+          category: 'Content Missing',
+          suggestion: 'Re-import skill to get content analysis',
+          reason: 'Skill content not available for analysis',
+          priority: 'low',
+          autoApplicable: false
+        });
+      }
+
+      // Check workspace-specific optimizations
+      if (workspaceConfig.techStack.languages.includes('TypeScript')) {
+        suggestions.push({
+          category: 'TypeScript Integration',
+          suggestion: 'Add type definitions and interfaces examples',
+          reason: 'Workspace uses TypeScript for type safety',
+          priority: 'medium',
+          autoApplicable: false
+        });
+      }
+
+      // Check for test coverage suggestions
+      if (skillDir && fs.existsSync(skillDir)) {
+        const testsPath = path.join(skillDir, 'tests');
+        if (!fs.existsSync(testsPath)) {
+          suggestions.push({
+            category: 'Testing',
+            suggestion: 'Add test cases for skill functionality',
+            reason: 'No tests directory found',
+            priority: 'low',
+            autoApplicable: false
+          });
+        }
+      }
+
+      // Display suggestions
+      if (suggestions.length === 0) {
+        console.log('\n   ✅ No optimization suggestions - skill is well configured!');
+      } else {
+        for (let i = 0; i < suggestions.length; i++) {
+          const s = suggestions[i];
+          const priorityIcon = s.priority === 'high' ? '🔴' : s.priority === 'medium' ? '🟡' : '🟢';
+          const autoIcon = s.autoApplicable ? '⚙️' : '📝';
+
+          console.log(`\n   ${i + 1}. ${priorityIcon} [${s.category}]`);
+          console.log(`      建议: ${s.suggestion}`);
+          console.log(`      原因: ${s.reason}`);
+          console.log(`      类型: ${autoIcon} ${s.autoApplicable ? '可自动应用' : '需手动处理'}`);
+        }
+      }
+
+      // ═══════════════════════════════════════════
+      // STEP 5: Apply Changes (if requested)
+      // ═══════════════════════════════════════════
       if (options.apply) {
-        // Create new evolution record with updated version
-        const latestRecord = records[records.length - 1];
+        console.log('\n⚙️  Step 5: 应用优化');
+        console.log('─'.repeat(50));
+
+        const autoSuggestions = suggestions.filter(s => s.autoApplicable);
+        let appliedCount = 0;
+
+        for (const s of autoSuggestions) {
+          console.log(`   应用: ${s.suggestion}...`);
+
+          if (s.category === 'Package Manager' && skillContent && skillDir) {
+            // Replace npm with appropriate package manager
+            const newContent = skillContent.replace(/npm run/g, `${pkgManager} run`)
+                                           .replace(/npm install/g, `${pkgManager} install`);
+
+            if (newContent !== skillContent) {
+              // Create backup
+              const backupPath = path.join(skillDir, 'SKILL.md.backup');
+              fs.copyFileSync(path.join(skillDir, 'SKILL.md'), backupPath);
+
+              // Write new content
+              fs.writeFileSync(path.join(skillDir, 'SKILL.md'), newContent);
+              console.log(`      ✅ 已更新包管理器命令为 ${pkgManager}`);
+              appliedCount++;
+            } else {
+              console.log(`      ⏭️ 无需更改`);
+            }
+          }
+
+          if (s.category === 'Path Localization' && skillContent && skillDir) {
+            // Replace absolute paths with placeholders
+            let newContent = skillContent;
+            const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+
+            if (homeDir) {
+              newContent = newContent.replace(new RegExp(homeDir, 'g'), '${HOME}');
+              newContent = newContent.replace(/\/Users\/[^/]+/g, '${HOME}');
+              newContent = newContent.replace(/\/home\/[^/]+/g, '${HOME}');
+            }
+
+            if (newContent !== skillContent) {
+              const backupPath = path.join(skillDir, 'SKILL.md.backup');
+              fs.copyFileSync(path.join(skillDir, 'SKILL.md'), backupPath);
+              fs.writeFileSync(path.join(skillDir, 'SKILL.md'), newContent);
+              console.log(`      ✅ 已替换绝对路径为 \${HOME}`);
+              appliedCount++;
+            } else {
+              console.log(`      ⏭️ 无需更改`);
+            }
+          }
+        }
+
+        // Create evolution record
+        const newVersion = appliedCount > 0 ? '1.1.0' : db.getLatestVersion(skillName) || '1.0.0';
+
         const newRecord: EvolutionRecord = {
           id: EvolutionDatabase.generateId(),
           skillName: skillName,
-          version: versionChange.newVersion,
+          version: newVersion,
           timestamp: new Date(),
-          telemetryData: JSON.stringify(metrics),
-          patches: JSON.stringify([{
-            type: versionChange.evolutionType,
-            description: versionChange.changeSummary,
-            appliedAt: new Date()
-          }]),
+          telemetryData: JSON.stringify({
+            workspaceAnalysis: workspaceConfig.techStack,
+            suggestionsCount: suggestions.length,
+            appliedCount
+          }),
+          patches: JSON.stringify(suggestions.map(s => ({
+            category: s.category,
+            suggestion: s.suggestion,
+            applied: s.autoApplicable
+          }))),
           importSource: latestRecord.importSource
         };
 
         db.addRecord(newRecord);
 
-        console.log('\n✅ Evolution applied!');
-        console.log(`   New version: ${versionChange.newVersion}`);
-        console.log(`   Tag: ${versionChange.newTag}`);
+        console.log(`\n   ✅ 已应用 ${appliedCount} 个优化`);
+        console.log(`   📦 版本: ${newVersion}`);
+        console.log(`   💾 备份: SKILL.md.backup`);
+
+        // Next steps
+        console.log('\n📌 下一步操作:');
+        console.log(`   sa info ${skillName}        # 查看更新后的技能信息`);
+        console.log(`   sa log ${skillName}         # 查看版本历史`);
+
       } else {
-        console.log('\n💡 Run with --apply to apply changes.');
+        // Show next steps without apply
+        const autoCount = suggestions.filter(s => s.autoApplicable).length;
+        const manualCount = suggestions.filter(s => !s.autoApplicable).length;
+
+        console.log('\n📌 下一步操作:');
+        if (autoCount > 0) {
+          console.log(`   sa evolve ${skillName} --apply   # 自动应用 ${autoCount} 个可自动化的优化`);
+        }
+        if (manualCount > 0) {
+          console.log(`   # 需要手动处理 ${manualCount} 个建议`);
+        }
+        console.log(`   sa info ${skillName}            # 查看技能详情`);
+        console.log(`   sa log ${skillName}             # 查看版本历史`);
       }
+
+      if (options.detail) {
+        console.log('\n📊 Detailed Workspace Config');
+        console.log('─'.repeat(50));
+        console.log(JSON.stringify(workspaceConfig, null, 2));
+      }
+
     } else {
       // No skill specified - show all skills + workspace analysis
       const records = db.getAllRecords();
 
       if (records.length === 0) {
         console.log('No skills installed yet.');
-        console.log('Use `sa get <source>` to install a skill.');
+        console.log('Use `sa import <source>` to install a skill.');
         return;
       }
 
@@ -670,7 +1325,9 @@ program
 
       for (const name of skillNames) {
         const skillRecords = db.getRecords(name);
-        console.log(`  • ${name}: ${skillRecords.length} evolution(s)`);
+        const latest = skillRecords[skillRecords.length - 1];
+        console.log(`  • ${name}: v${db.getLatestVersion(name)} (${skillRecords.length} evolution(s))`);
+        console.log(`    Source: ${latest.importSource || 'unknown'}`);
       }
 
       // Workspace analysis
@@ -678,15 +1335,17 @@ program
       console.log('─'.repeat(40));
       try {
         const workspaceAnalyzer = new WorkspaceAnalyzer(process.cwd());
-        const rules = workspaceAnalyzer.generateWorkspaceRules();
-        // Extract just the key info
-        const lines = rules.split('\n').slice(0, 15);
-        console.log(lines.join('\n'));
+        const config = workspaceAnalyzer.analyze();
+        console.log(`Languages: ${config.techStack.languages.join(', ') || 'None'}`);
+        console.log(`Frameworks: ${config.techStack.frameworks.join(', ') || 'None'}`);
+        console.log(`Package Manager: ${config.techStack.packageManager}`);
       } catch {
         console.log('Workspace analysis not available');
       }
 
-      console.log('\n💡 Run `sa evolve <skill>` for detailed analysis.');
+      console.log('\n📌 下一步操作:');
+      console.log('   sa evolve <skill-name>     # 分析具体技能');
+      console.log('   sa import <skill-name>     # 导入新技能');
     }
   });
 
@@ -722,7 +1381,9 @@ program
         const version = db.getLatestVersion(name);
         console.log(`  • ${name} (v${version})`);
       }
-      console.log('\n💡 Use `sa share <skill>` to share a skill.');
+      console.log('\n📌 下一步操作:');
+      console.log('   sa share <skill-name>      # 分享具体技能');
+      console.log('   sa export <skill-name>     # 导出技能到文件');
       return;
     }
 
@@ -868,23 +1529,91 @@ async function execGit(command: string, cwd: string, ignoreError = false): Promi
 program
   .command('export [skillName]')
   .description('Export from platforms')
-  .option('-p, --platform <platform>', 'Platform to export from (openclaw, claudecode, all)', 'all')
+  .option('-p, --platform <platform>', 'Platform to export from (imported, openclaw, claudecode, all)', 'all')
   .option('-o, --output <dir>', 'Output directory', './exported-skills')
   .option('-f, --format <format>', 'Export format (zip, json)', 'zip')
   .action((skillName: string | undefined, options: { platform: string; output: string; format: string }) => {
+    const db = new EvolutionDatabase('evolution.db');
     const targetSkill = skillName ? skillName : 'all skills';
+    const absoluteOutput = path.resolve(options.output);
+
     console.log(`📦 Exporting ${targetSkill} from ${options.platform}...\n`);
 
     const platforms = options.platform === 'all'
-      ? ['openclaw', 'claudecode']
+      ? ['imported', 'openclaw', 'claudecode']
       : [options.platform];
 
     let totalExported = 0;
+    const exportedFiles: string[] = [];
 
     for (const platform of platforms) {
       console.log(`\n── ${platform.toUpperCase()} ──`);
 
-      if (platform === 'openclaw') {
+      if (platform === 'imported') {
+        // Export from database (imported skills)
+        try {
+          let skills: string[] = [];
+
+          if (skillName) {
+            const records = db.getRecords(skillName);
+            if (records.length > 0) {
+              skills = [skillName];
+            } else {
+              console.log(`  ⚠ 技能 "${skillName}" 未在已导入列表中找到`);
+            }
+          } else {
+            const allRecords = db.getAllRecords();
+            skills = [...new Set(allRecords.map(r => r.skillName))];
+          }
+
+          if (skills.length === 0) {
+            console.log('  ⚠ 没有已导入的技能');
+            continue;
+          }
+
+          const outputDir = path.join(absoluteOutput, 'imported');
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+          }
+
+          for (const skill of skills) {
+            const records = db.getRecords(skill);
+            if (records.length === 0) continue;
+
+            // Get skill content from OpenClaw if available
+            const latestRecord = records[records.length - 1];
+            let systemPrompt = `# ${skill}\n\nExported from Skill-Adapter`;
+
+            // Try to get content from OpenClaw
+            if (latestRecord.importSource?.startsWith('OpenClaw:')) {
+              const originalDir = latestRecord.importSource.split(':')[1] || skill;
+              const openClawPath = findOpenClawSkillsPath();
+              if (openClawPath) {
+                const skillMdPath = path.join(openClawPath, originalDir, 'SKILL.md');
+                if (fs.existsSync(skillMdPath)) {
+                  systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
+                }
+              }
+            }
+
+            const outputPath = path.join(outputDir, `${skill}.zip`);
+            const skillPackage = skillExporter.createPackage(
+              skill,
+              { systemPrompt },
+              { version: latestRecord.version, author: 'imported' }
+            );
+            skillExporter.exportToFile(skillPackage, outputPath, {
+              format: options.format as 'zip' | 'json',
+              includeReadme: true
+            });
+            console.log(`  ✓ ${skill}`);
+            exportedFiles.push(outputPath);
+            totalExported++;
+          }
+        } catch (error) {
+          console.error(`  ❌ Export failed: ${error}`);
+        }
+      } else if (platform === 'openclaw') {
         try {
           const openClawPath = findOpenClawSkillsPath();
           if (!openClawPath) {
@@ -905,7 +1634,7 @@ program
             }
           }
 
-          const outputDir = path.join(options.output, 'openclaw');
+          const outputDir = path.join(absoluteOutput, 'openclaw');
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
           }
@@ -916,6 +1645,7 @@ program
             try {
               skillExporter.exportOpenClawSkill(skillPath, outputPath);
               console.log(`  ✓ ${skill}`);
+              exportedFiles.push(outputPath);
               totalExported++;
             } catch (err) {
               console.log(`  ✗ ${skill}: ${err}`);
@@ -933,7 +1663,7 @@ program
           }
 
           // Export Claude Code skills (commands/skills directories)
-          const outputDir = path.join(options.output, 'claudecode');
+          const outputDir = path.join(absoluteOutput, 'claudecode');
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
           }
@@ -964,6 +1694,7 @@ program
                 includeReadme: true
               });
               console.log(`  ✓ ${name}`);
+              exportedFiles.push(outputPath);
               totalExported++;
             }
           }
@@ -1006,6 +1737,7 @@ program
                 includeReadme: true
               });
               console.log(`  ✓ ${skillDir}`);
+              exportedFiles.push(outputPath);
               totalExported++;
             }
           }
@@ -1015,7 +1747,25 @@ program
       }
     }
 
-    console.log(`\n✅ Total exported: ${totalExported} skills to ${options.output}/`);
+    // Show results
+    if (totalExported === 0) {
+      console.log(`\n❌ 导出失败: 没有找到可导出的技能`);
+      console.log('\n📌 建议:');
+      console.log('   sa info              # 查看已导入的技能');
+      console.log('   sa import <skill>    # 先导入技能再导出');
+    } else {
+      console.log(`\n✅ 成功导出 ${totalExported} 个技能`);
+      console.log(`\n📁 导出目录: ${absoluteOutput}`);
+      if (exportedFiles.length > 0) {
+        console.log('\n📄 导出的文件:');
+        for (const file of exportedFiles) {
+          console.log(`   ${file}`);
+        }
+      }
+      console.log('\n📌 下一步操作:');
+      console.log('   # 在文件管理器中打开导出目录');
+      console.log(`   explorer ${absoluteOutput}`);
+    }
   });
 
 // Helper functions for finding platform paths
@@ -1141,7 +1891,9 @@ program
         console.log('');
       }
 
-      console.log('💡 Use `sa log <skill>` for detailed history.');
+      console.log('📌 下一步操作:');
+      console.log('   sa log <skill-name>        # 查看具体技能历史');
+      console.log('   sa evolve <skill-name>     # 分析并优化技能');
     }
   });
 
@@ -1153,28 +1905,265 @@ program
  * sa scan [file] - Security scan
  */
 program
-  .command('scan [file]')
+  .command('scan [skillOrFile]')
   .description('Scan for security issues')
-  .option('-f, --format <format>', 'Output format', 'text')
-  .action((file: string | undefined, options: { format: string }) => {
-    if (!file) {
-      console.log('🔒 Security Scanner\n');
-      console.log('Usage: sa scan <file>');
-      console.log('\nScan a skill file for security issues.');
-      console.log('\nExample:');
-      console.log('  sa scan skill.json');
-      console.log('  sa scan ./my-skill/');
+  .option('-f, --format <format>', 'Output format (text, json)', 'text')
+  .action(async (skillOrFile: string | undefined, options: { format: string }) => {
+    const db = new EvolutionDatabase('evolution.db');
+
+    // No argument - show all scannable skills
+    if (!skillOrFile) {
+      console.log('🔒 安全扫描\n');
+
+      // Get imported skills
+      const records = db.getAllRecords();
+      const importedSkills = [...new Set(records.map(r => r.skillName))];
+
+      // Get OpenClaw skills
+      const openClawPath = findOpenClawSkillsPath();
+      let openClawSkills: string[] = [];
+      if (openClawPath && fs.existsSync(openClawPath)) {
+        openClawSkills = fs.readdirSync(openClawPath).filter(f =>
+          fs.statSync(path.join(openClawPath, f)).isDirectory()
+        );
+      }
+
+      // Get Claude Code skills
+      const claudeCodePath = findClaudeCodeSkillsPath();
+      let claudeCodeCommands: string[] = [];
+      let claudeCodeSkills: string[] = [];
+      if (claudeCodePath && fs.existsSync(claudeCodePath)) {
+        const commandsPath = path.join(claudeCodePath, 'commands');
+        if (fs.existsSync(commandsPath)) {
+          claudeCodeCommands = fs.readdirSync(commandsPath)
+            .filter(f => f.endsWith('.md'))
+            .map(f => f.replace('.md', ''));
+        }
+        const skillsPath = path.join(claudeCodePath, 'skills');
+        if (fs.existsSync(skillsPath)) {
+          claudeCodeSkills = fs.readdirSync(skillsPath).filter(f =>
+            fs.statSync(path.join(skillsPath, f)).isDirectory()
+          );
+        }
+      }
+
+      if (importedSkills.length === 0 && openClawSkills.length === 0 &&
+          claudeCodeCommands.length === 0 && claudeCodeSkills.length === 0) {
+        console.log('没有找到可扫描的技能。\n');
+        console.log('📌 下一步操作:');
+        console.log('   sa import <skill>        # 先导入技能');
+        return;
+      }
+
+      // Show imported skills
+      if (importedSkills.length > 0) {
+        console.log('── 已导入的技能 ──');
+        for (const skill of importedSkills) {
+          const skillRecords = db.getRecords(skill);
+          const latest = skillRecords[skillRecords.length - 1];
+          console.log(`  📦 ${skill} (v${latest.version})`);
+        }
+        console.log('');
+      }
+
+      // Show OpenClaw skills
+      if (openClawSkills.length > 0 && openClawPath) {
+        console.log('── OpenClaw 本地技能 ──');
+        for (const skill of openClawSkills.slice(0, 10)) {
+          const skillMdPath = path.join(openClawPath, skill, 'SKILL.md');
+          const hasPrompt = fs.existsSync(skillMdPath);
+          console.log(`  📦 ${skill} ${hasPrompt ? '' : '(无 SKILL.md)'}`);
+        }
+        if (openClawSkills.length > 10) {
+          console.log(`  ... 还有 ${openClawSkills.length - 10} 个`);
+        }
+        console.log('');
+      }
+
+      // Show Claude Code commands
+      if (claudeCodeCommands.length > 0) {
+        console.log('── Claude Code Commands ──');
+        for (const cmd of claudeCodeCommands.slice(0, 10)) {
+          console.log(`  📦 ${cmd}`);
+        }
+        if (claudeCodeCommands.length > 10) {
+          console.log(`  ... 还有 ${claudeCodeCommands.length - 10} 个`);
+        }
+        console.log('');
+      }
+
+      // Show Claude Code skills
+      if (claudeCodeSkills.length > 0) {
+        console.log('── Claude Code Skills ──');
+        for (const skill of claudeCodeSkills.slice(0, 10)) {
+          console.log(`  📦 ${skill}`);
+        }
+        if (claudeCodeSkills.length > 10) {
+          console.log(`  ... 还有 ${claudeCodeSkills.length - 10} 个`);
+        }
+        console.log('');
+      }
+
+      console.log('📌 下一步操作:');
+      console.log('   sa scan <skill-name>     # 扫描已导入的技能');
+      console.log('   sa scan <file-path>      # 扫描本地文件');
+      console.log('\n示例:');
+      console.log('   sa scan frontend-design');
+      console.log('   sa scan ./my-skill/SKILL.md');
+      console.log('   sa scan skill.json -f json');
       return;
     }
 
-    console.log(`🔒 Scanning: ${file}\n`);
+    // Check if it's a skill name or file path
+    const isFilePath = skillOrFile.includes('/') || skillOrFile.includes('\\') ||
+                       skillOrFile.endsWith('.json') || skillOrFile.endsWith('.md') ||
+                       fs.existsSync(skillOrFile);
 
-    try {
-      const result = securityEvaluator.scanFile(file);
+    if (isFilePath) {
+      // Scan file
+      console.log(`🔒 扫描文件: ${skillOrFile}\n`);
+
+      try {
+        const result = securityEvaluator.scanFile(skillOrFile);
+        const report = securityEvaluator.generateReport(result, options.format as 'text' | 'json' | 'markdown');
+        console.log(report);
+
+        console.log('\n📌 下一步操作:');
+        console.log('   sa import ' + skillOrFile + '    # 导入这个技能');
+      } catch (error) {
+        console.error(`❌ 错误: ${error}`);
+        console.log('\n📌 建议:');
+        console.log('   sa scan                   # 查看可扫描的技能');
+      }
+    } else {
+      // Scan by skill name
+      console.log(`🔒 扫描技能: ${skillOrFile}\n`);
+
+      // Try to find skill content
+      let skillContent = '';
+      let skillPath = '';
+      let skillSource = '';
+
+      // Check imported skills first
+      const records = db.getRecords(skillOrFile);
+      if (records.length > 0) {
+        const latest = records[records.length - 1];
+        skillSource = latest.importSource || 'unknown';
+
+        // Try to get content from OpenClaw
+        if (latest.importSource?.startsWith('OpenClaw:') || latest.importSource?.toLowerCase() === 'openclaw') {
+          const originalDir = latest.importSource.split(':')[1] || skillOrFile;
+          const openClawPath = findOpenClawSkillsPath();
+          if (openClawPath) {
+            skillPath = path.join(openClawPath, originalDir);
+            const skillMdPath = path.join(skillPath, 'SKILL.md');
+            if (fs.existsSync(skillMdPath)) {
+              skillContent = fs.readFileSync(skillMdPath, 'utf-8');
+            }
+          }
+        }
+      }
+
+      // Check OpenClaw directly (not imported but exists locally)
+      if (!skillContent) {
+        const openClawPath = findOpenClawSkillsPath();
+        if (openClawPath) {
+          skillPath = path.join(openClawPath, skillOrFile);
+          const skillMdPath = path.join(skillPath, 'SKILL.md');
+          if (fs.existsSync(skillMdPath)) {
+            skillContent = fs.readFileSync(skillMdPath, 'utf-8');
+            skillSource = 'OpenClaw (本地)';
+          }
+        }
+      }
+
+      // Check Claude Code skills
+      if (!skillContent) {
+        const claudeCodePath = findClaudeCodeSkillsPath();
+        if (claudeCodePath) {
+          // Check commands
+          const cmdPath = path.join(claudeCodePath, 'commands', `${skillOrFile}.md`);
+          if (fs.existsSync(cmdPath)) {
+            skillContent = fs.readFileSync(cmdPath, 'utf-8');
+            skillPath = cmdPath;
+            skillSource = 'Claude Code Command';
+          }
+
+          // Check skills directory
+          if (!skillContent) {
+            const skillDir = path.join(claudeCodePath, 'skills', skillOrFile);
+            if (fs.existsSync(skillDir)) {
+              const skillMdPath = path.join(skillDir, 'skill.md');
+              if (fs.existsSync(skillMdPath)) {
+                skillContent = fs.readFileSync(skillMdPath, 'utf-8');
+                skillPath = skillDir;
+                skillSource = 'Claude Code Skill';
+              }
+            }
+          }
+        }
+      }
+
+      // If still no content, try to fetch from remote
+      if (!skillContent) {
+        console.log('   正在从远程平台获取技能内容...\n');
+        try {
+          const searchResults = await platformFetcher.search(skillOrFile, { limit: 1 });
+          if (searchResults.length > 0) {
+            const found = searchResults[0];
+            skillContent = await platformFetcher.fetchSkillContent(found);
+            skillSource = found.platform === 'skills-sh' ? 'skills.sh' : 'clawhub.com';
+          }
+        } catch {
+          // Ignore fetch errors
+        }
+      }
+
+      if (!skillContent) {
+        // Show available info even if content not found
+        if (records.length > 0) {
+          const latest = records[records.length - 1];
+          console.log(`❌ 无法获取技能内容进行扫描`);
+          console.log(`\n   技能: ${skillOrFile}`);
+          console.log(`   版本: ${latest.version}`);
+          console.log(`   来源: ${latest.importSource || 'unknown'}`);
+          console.log(`\n   💡 提示: 远程技能需要通过官方 CLI 安装后才能扫描。`);
+          console.log(`\n📌 下一步操作:`);
+          console.log(`   sa scan                   # 查看可扫描的本地技能`);
+          if (latest.importSource?.includes('skills.sh')) {
+            console.log(`   npx skills add <owner/repo>  # 使用官方 CLI 安装`);
+          } else if (latest.importSource?.includes('clawhub')) {
+            console.log(`   npx clawhub@latest install ${skillOrFile}  # 使用官方 CLI 安装`);
+          }
+          console.log(`   # 或者扫描本地 OpenClaw 技能`);
+        } else {
+          console.log(`❌ 未找到技能: ${skillOrFile}`);
+          console.log('\n📌 下一步操作:');
+          console.log('   sa scan                   # 查看可扫描的技能');
+          console.log('   sa import ' + skillOrFile + ' --no-npx   # 先导入技能');
+        }
+        return;
+      }
+
+      // Run security scan
+      const result = securityEvaluator.scan(skillContent, skillOrFile);
       const report = securityEvaluator.generateReport(result, options.format as 'text' | 'json' | 'markdown');
       console.log(report);
-    } catch (error) {
-      console.error(`Error: ${error}`);
+
+      if (skillPath) {
+        console.log(`\n📁 技能路径: ${skillPath}`);
+      }
+      if (skillSource) {
+        console.log(`📥 来源: ${skillSource}`);
+      }
+
+      console.log('\n📌 下一步操作:');
+      if (result.passed) {
+        console.log('   sa info ' + skillOrFile + '      # 查看技能详情');
+        console.log('   sa evolve ' + skillOrFile + '    # 分析并优化');
+      } else {
+        console.log('   # 请检查安全问题后再使用');
+      }
     }
   });
 
