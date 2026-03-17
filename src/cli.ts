@@ -313,74 +313,281 @@ program
 // ============================================
 // sa info [skill] - Unified view/list
 // ============================================
+// sa info [skill] - Unified view/list
+// ============================================
 program
   .command('info [skillName]')
   .description('View skill info')
   .option('-v, --version <version>', 'Specific version')
   .option('--security', 'Show security status')
-  .action((skillName: string | undefined, options: { version?: string; security?: boolean }) => {
+  .option('-p, --platform <platform>', 'Platform to show (imported, openclaw, claudecode, all)', 'all')
+  .action((skillName: string | undefined, options: { version?: string; security?: boolean; platform: string }) => {
     const db = new EvolutionDatabase('evolution.db');
 
     if (!skillName) {
       // List mode
-      console.log('📋 Your Skills\n');
+      console.log('📋 Available Skills\n');
 
-      const records = db.getAllRecords();
+      const showAll = options.platform === 'all';
+      const platforms = showAll ? ['imported', 'openclaw', 'claudecode'] : [options.platform];
 
-      if (records.length === 0) {
-        console.log('No skills installed yet.');
-        console.log('Use `sa get <source>` to install a skill.');
-        return;
-      }
+      for (const platform of platforms) {
+        if (platform === 'imported') {
+          const records = db.getAllRecords();
+          if (records.length > 0) {
+            console.log('── Imported Skills ──');
+            const skillNames = [...new Set(records.map(r => r.skillName))];
+            for (const name of skillNames) {
+              const version = db.getLatestVersion(name);
+              const skillRecords = db.getRecords(name);
+              console.log(`  📦 ${name} (v${version}) - ${skillRecords.length} evolution(s)`);
+            }
+            console.log('');
+          } else if (!showAll) {
+            console.log('No skills imported yet.\n');
+          }
+        } else if (platform === 'openclaw') {
+          const openClawPath = findOpenClawSkillsPath();
+          if (openClawPath && fs.existsSync(openClawPath)) {
+            const skills = fs.readdirSync(openClawPath).filter(f =>
+              fs.statSync(path.join(openClawPath, f)).isDirectory()
+            );
+            if (skills.length > 0) {
+              console.log('── OpenClaw Skills ──');
+              for (const skill of skills) {
+                const skillMdPath = path.join(openClawPath, skill, 'SKILL.md');
+                const hasPrompt = fs.existsSync(skillMdPath);
+                console.log(`  📦 ${skill} ${hasPrompt ? '' : '(no prompt)'}`);
+              }
+              console.log('');
+            }
+          }
+        } else if (platform === 'claudecode') {
+          const claudeCodePath = findClaudeCodeSkillsPath();
+          if (claudeCodePath && fs.existsSync(claudeCodePath)) {
+            const commandsPath = path.join(claudeCodePath, 'commands');
+            const skillsPath = path.join(claudeCodePath, 'skills');
 
-      const skillNames = [...new Set(records.map(r => r.skillName))];
+            if (fs.existsSync(commandsPath)) {
+              const commands = fs.readdirSync(commandsPath).filter(f => f.endsWith('.md'));
+              if (commands.length > 0) {
+                console.log('── Claude Code Commands ──');
+                for (const cmd of commands) {
+                  console.log(`  📦 ${cmd.replace('.md', '')}`);
+                }
+                console.log('');
+              }
+            }
 
-      for (const name of skillNames) {
-        const skillRecords = db.getRecords(name);
-        const latestVersion = db.getLatestVersion(name);
-        const latestRecord = skillRecords[skillRecords.length - 1];
-
-        console.log(`📦 ${name} (v${latestVersion})`);
-        console.log(`   Evolutions: ${skillRecords.length} | Imported: ${latestRecord.importSource || 'unknown'}`);
-
-        if (options.security && latestRecord.securityScanResult) {
-          const scan = JSON.parse(latestRecord.securityScanResult);
-          const icon = scan.passed ? '✅' : '⚠️';
-          console.log(`   Security: ${icon} ${scan.riskAssessment?.overallRisk || 'unknown'} risk`);
+            if (fs.existsSync(skillsPath)) {
+              const skillDirs = fs.readdirSync(skillsPath).filter(f =>
+                fs.statSync(path.join(skillsPath, f)).isDirectory()
+              );
+              if (skillDirs.length > 0) {
+                console.log('── Claude Code Skills ──');
+                for (const skill of skillDirs) {
+                  console.log(`  📦 ${skill}`);
+                }
+                console.log('');
+              }
+            }
+          }
         }
-        console.log('');
       }
+
+      console.log('💡 Use `sa info <skill>` for details.');
+      console.log('💡 Use `sa info -p imported` to see only imported skills.');
+
     } else {
-      // Detail mode
+      // Detail mode - show specific skill info
       console.log(`📦 ${skillName}\n`);
 
+      // Check imported skills first
       const records = db.getRecords(skillName);
+      if (records.length > 0) {
+        const latestVersion = db.getLatestVersion(skillName);
+        const latestRecord = records[records.length - 1];
 
-      if (records.length === 0) {
-        console.log(`Skill "${skillName}" not found.`);
+        console.log(`Source: Imported`);
+        console.log(`Version: ${latestVersion}`);
+        console.log(`Evolutions: ${records.length}`);
+        console.log(`Imported from: ${latestRecord.importSource || 'unknown'}`);
+        console.log(`Last updated: ${latestRecord.timestamp.toLocaleDateString()}`);
+
+        if (options.security) {
+          console.log('\n🔒 Security Status:');
+          if (latestRecord.securityScanResult) {
+            const scan = JSON.parse(latestRecord.securityScanResult);
+            console.log(`  Risk Level: ${scan.riskAssessment?.overallRisk || 'unknown'}`);
+            console.log(`  Issues: ${scan.sensitiveInfoFindings?.length || 0} sensitive, ${scan.dangerousOperationFindings?.length || 0} dangerous`);
+          } else {
+            console.log('  Not scanned. Run `sa scan` to check.');
+          }
+        }
+
+        console.log('\n💡 Run `sa evolve ' + skillName + '` to analyze improvements.');
         return;
       }
 
-      const latestVersion = db.getLatestVersion(skillName);
-      const latestRecord = records[records.length - 1];
+      // Check OpenClaw skills
+      const openClawPath = findOpenClawSkillsPath();
+      if (openClawPath) {
+        const skillDir = path.join(openClawPath, skillName);
+        if (fs.existsSync(skillDir)) {
+          console.log(`Source: OpenClaw\n`);
 
-      console.log(`Version: ${latestVersion}`);
-      console.log(`Evolutions: ${records.length}`);
-      console.log(`Imported from: ${latestRecord.importSource || 'unknown'}`);
-      console.log(`Last updated: ${latestRecord.timestamp.toLocaleDateString()}`);
+          // Read SKILL.md
+          const skillMdPath = path.join(skillDir, 'SKILL.md');
+          let systemPrompt = '';
+          if (fs.existsSync(skillMdPath)) {
+            systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
+            console.log(`── System Prompt ──`);
+            console.log(`Size: ${(systemPrompt.length / 1024).toFixed(1)} KB`);
+            console.log(`Lines: ${systemPrompt.split('\n').length}`);
 
-      if (options.security) {
-        console.log('\n🔒 Security Status:');
-        if (latestRecord.securityScanResult) {
-          const scan = JSON.parse(latestRecord.securityScanResult);
-          console.log(`  Risk Level: ${scan.riskAssessment?.overallRisk || 'unknown'}`);
-          console.log(`  Issues: ${scan.sensitiveInfoFindings?.length || 0} sensitive, ${scan.dangerousOperationFindings?.length || 0} dangerous`);
-        } else {
-          console.log('  Not scanned. Run `sa scan` to check.');
+            // Try to extract version from skill content
+            const versionMatch = systemPrompt.match(/version[:\s]+(\d+\.\d+\.\d+)/i);
+            if (versionMatch) {
+              console.log(`Version: ${versionMatch[1]}`);
+            }
+          }
+
+          // Get directory stats
+          const stats = fs.statSync(skillDir);
+          console.log(`\n── Metadata ──`);
+          console.log(`Created: ${stats.birthtime.toLocaleString()}`);
+          console.log(`Modified: ${stats.mtime.toLocaleString()}`);
+          console.log(`Path: ${skillDir}`);
+
+          // Count files and directories
+          const countFiles = (dir: string): { files: number; dirs: number; size: number } => {
+            let files = 0, dirs = 0, size = 0;
+            const items = fs.readdirSync(dir);
+            for (const item of items) {
+              if (item.startsWith('.')) continue;
+              const itemPath = path.join(dir, item);
+              const stat = fs.statSync(itemPath);
+              if (stat.isDirectory()) {
+                dirs++;
+                const sub = countFiles(itemPath);
+                files += sub.files;
+                dirs += sub.dirs;
+                size += sub.size;
+              } else {
+                files++;
+                size += stat.size;
+              }
+            }
+            return { files, dirs, size };
+          };
+          const counts = countFiles(skillDir);
+          console.log(`Files: ${counts.files} | Dirs: ${counts.dirs} | Total Size: ${(counts.size / 1024).toFixed(1)} KB`);
+
+          // Show directory tree
+          console.log(`\n── Directory Tree ──`);
+          const showTree = (dir: string, prefix: string = '', maxDepth = 3, currentDepth = 0) => {
+            if (currentDepth >= maxDepth) return;
+            const items = fs.readdirSync(dir).filter(i => !i.startsWith('.'));
+            items.forEach((item, index) => {
+              const itemPath = path.join(dir, item);
+              const isLast = index === items.length - 1;
+              const prefixChar = isLast ? '└── ' : '├── ';
+              const newPrefix = prefix + (isLast ? '    ' : '│   ');
+              const stat = fs.statSync(itemPath);
+
+              let info = item;
+              if (stat.isDirectory()) {
+                info += '/';
+              } else {
+                info += ` (${(stat.size / 1024).toFixed(1)} KB)`;
+              }
+
+              console.log(prefix + prefixChar + info);
+
+              if (stat.isDirectory()) {
+                showTree(itemPath, newPrefix, maxDepth, currentDepth + 1);
+              }
+            });
+          };
+          showTree(skillDir);
+
+          // Show references
+          const refPath = path.join(skillDir, 'reference');
+          if (fs.existsSync(refPath)) {
+            const refs = fs.readdirSync(refPath).filter(f => f.endsWith('.md'));
+            if (refs.length > 0) {
+              console.log(`\n── References ──`);
+              for (const ref of refs) {
+                const refFile = path.join(refPath, ref);
+                const stat = fs.statSync(refFile);
+                console.log(`  📄 ${ref} (${(stat.size / 1024).toFixed(1)} KB)`);
+              }
+            }
+          }
+
+          // Show scripts
+          const scriptsPath = path.join(skillDir, 'scripts');
+          if (fs.existsSync(scriptsPath)) {
+            const scripts = fs.readdirSync(scriptsPath);
+            if (scripts.length > 0) {
+              console.log(`\n── Scripts ──`);
+              for (const script of scripts) {
+                const scriptFile = path.join(scriptsPath, script);
+                const stat = fs.statSync(scriptFile);
+                console.log(`  🔧 ${script} (${(stat.size / 1024).toFixed(1)} KB)`);
+              }
+            }
+          }
+
+          // Show tests
+          const testsPath = path.join(skillDir, 'tests');
+          if (fs.existsSync(testsPath)) {
+            const tests = fs.readdirSync(testsPath);
+            if (tests.length > 0) {
+              console.log(`\n── Tests ──`);
+              for (const test of tests) {
+                const testFile = path.join(testsPath, test);
+                const stat = fs.statSync(testFile);
+                console.log(`  ✅ ${test} (${(stat.size / 1024).toFixed(1)} KB)`);
+              }
+            }
+          }
+
+          console.log('\n💡 Use `sa import ' + skillDir + '` to import this skill.');
+          return;
         }
       }
 
-      console.log('\n💡 Run `sa evolve ' + skillName + '` to analyze improvements.');
+      // Check Claude Code skills
+      const claudeCodePath = findClaudeCodeSkillsPath();
+      if (claudeCodePath) {
+        const cmdPath = path.join(claudeCodePath, 'commands', `${skillName}.md`);
+        const skillPath = path.join(claudeCodePath, 'skills', skillName);
+
+        if (fs.existsSync(cmdPath)) {
+          console.log(`Source: Claude Code Command`);
+          const content = fs.readFileSync(cmdPath, 'utf-8');
+          console.log(`Prompt Size: ${content.length} chars`);
+          console.log(`Path: ${cmdPath}`);
+          console.log('\n💡 Use `sa import ${cmdPath}` to import this skill.');
+          return;
+        }
+
+        if (fs.existsSync(skillPath)) {
+          console.log(`Source: Claude Code Skill`);
+          const skillMdPath = path.join(skillPath, 'skill.md');
+          if (fs.existsSync(skillMdPath)) {
+            const content = fs.readFileSync(skillMdPath, 'utf-8');
+            console.log(`Prompt Size: ${content.length} chars`);
+          }
+          console.log(`Path: ${skillPath}`);
+          console.log('\n💡 Use `sa import ${skillPath}` to import this skill.');
+          return;
+        }
+      }
+
+      console.log(`Skill "${skillName}" not found.`);
+      console.log('\n💡 Use `sa info` to list available skills.');
     }
   });
 
