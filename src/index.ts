@@ -33,6 +33,7 @@ export * from './types/versioning';
 
 // Config modules
 export { AgentDetector, agentDetector } from './core/config';
+export { ConfigManager, configManager, UserPreferences, SkillAdapterConfig } from './core/config-manager';
 export * from './types/config';
 
 // Version
