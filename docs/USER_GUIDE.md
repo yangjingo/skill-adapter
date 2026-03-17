@@ -130,6 +130,11 @@ sa info
 #   📦 docker-env
 #   📦 vllm-ascend-deploy
 #
+# ── Claude Code Skills ──
+#   📦 skill-creator
+#   📦 frontend-design
+#   📦 hook-development
+#
 # 📌 下一步操作:
 #    sa info <skill-name>       # 查看具体技能详情
 #    sa import <skill-name>     # 导入新技能
@@ -142,6 +147,12 @@ sa info hccn-tools
 
 # 只显示已导入的技能
 sa info -p imported
+
+# 只显示 OpenClaw 技能
+sa info -p openclaw
+
+# 只显示 Claude Code 技能
+sa info -p claudecode
 
 # 显示安全状态
 sa info my-skill --security
@@ -494,8 +505,10 @@ Skill-Adapter 支持从以下平台获取技能：
 |------|-----|----------|------|
 | skills.sh | https://skills.sh | `npx skills add owner/repo` | Vercel 官方技能目录 |
 | clawhub.com | https://clawhub.com | `npx clawhub@latest install skill-name` | 开源技能生态系统 |
-| OpenClaw | 本地目录 | - | 本地 OpenClaw 安装的技能 |
-| Claude Code | 本地目录 | - | 本地 Claude Code 配置的技能 |
+| OpenClaw | 本地目录 | - | 本地 OpenClaw 安装的技能 (`~/.openclaw/skills/`) |
+| Claude Code | 本地目录 | - | 本地 Claude Code 安装的技能 (`~/.claude/plugins/cache/*/skills/`) |
+
+**注意**：Claude Code Skills 是从已安装的插件中提取的实际技能，位于 `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/skills/` 目录。
 
 ### 官方 CLI 安装方式
 

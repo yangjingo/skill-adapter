@@ -53,7 +53,7 @@ const skillPackage = skillExporter.createPackage(
 const jsonContent = skillExporter.exportToJson(skillPackage);
 
 // 发布到 Registry
-const result = await skillRegistry.publish(skillPackage, 'clawhub');
+const result = await skillRegistry.publish(skillPackage, 'skills-sh');
 ```
 
 ### 发现功能
@@ -66,7 +66,7 @@ const hotSkills = await platformFetcher.fetchHot('skills-sh', 10);
 
 // 搜索 Skills
 const searchResult = await recommendationEngine.discover('code review', {
-  platforms: ['skills-sh', 'clawhub'],
+  platforms: ['skills-sh'],
   limit: 20
 });
 
@@ -115,7 +115,11 @@ const config: AgentConfig = await agentDetector.ensureConfigured();
 ```typescript
 import { EvolutionDatabase, EvolutionRecord } from 'skill-adapter';
 
-const db = new EvolutionDatabase('evolution.db');
+// 数据库默认存储在 ~/.skill-adapter/evolution.jsonl (JSONL格式)
+const db = new EvolutionDatabase();
+
+// 也可以指定自定义路径
+// const db = new EvolutionDatabase('/path/to/custom.jsonl');
 
 // 添加记录
 db.addRecord({
@@ -124,15 +128,25 @@ db.addRecord({
   version: '1.0.0',
   timestamp: new Date(),
   telemetryData: JSON.stringify([]),
-  patches: JSON.stringify([])
+  patches: JSON.stringify([]),
+  importSource: 'skills.sh',  // 可选: 导入来源
+  skillPath: '/path/to/skill'  // 可选: 技能文件路径
 });
 
 // 获取记录
 const records = db.getRecords('my-skill');
 const latestVersion = db.getLatestVersion('my-skill');
+const latestRecord = db.getLatestRecord('my-skill');  // 新增: 获取最新记录
 
 // 获取所有记录
 const allRecords = db.getAllRecords();
+const allSkillNames = db.getAllSkillNames();  // 新增: 获取所有技能名称
+
+// 更新记录
+db.updateRecord(recordId, { skillPath: '/new/path' });
+
+// 获取数据库路径
+const dbPath = db.getDbPath();  // 新增: 获取数据库文件路径
 ```
 
 ---

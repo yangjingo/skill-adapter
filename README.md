@@ -53,6 +53,9 @@ sa info
 # View specific skill details
 sa info docker-env
 
+# View only Claude Code skills
+sa info -p claudecode
+
 # Run evolution analysis
 sa evolve docker-env
 sa evolve docker-env --apply
