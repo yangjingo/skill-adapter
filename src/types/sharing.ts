@@ -148,7 +148,7 @@ export interface RegistryConfig {
 /**
  * Registry type
  */
-export type RegistryType = 'clawhub' | 'skills-sh' | 'custom';
+export type RegistryType = 'skills-sh' | 'custom';
 
 /**
  * Published skill info

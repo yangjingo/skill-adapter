@@ -35,7 +35,7 @@ export class SummaryGenerator {
    * Generate metrics comparison table
    */
   private generateMetricsTable(metrics: MetricComparison[]): string {
-    let table = `| 指标 (Metrics) | 原始版本 | 进化版本 | 变化 (Delta) | 状态 |\n`;
+    let table = `| Metric | Baseline | Evolved | Delta | Status |\n`;
     table += `| --- | --- | --- | --- | --- |\n`;
 
     for (const metric of metrics) {
@@ -77,7 +77,7 @@ export class SummaryGenerator {
    * Format metric value based on type
    */
   private formatValue(value: number, metricName: string): string {
-    if (metricName.includes('Token') || metricName.includes('上下文')) {
+    if (metricName.includes('Token') || metricName.includes('Context')) {
       // Format as K for large numbers
       if (value >= 1000) {
         return `${(value / 1000).toFixed(1)}k`;

@@ -1,5 +1,5 @@
 /**
- * Platform Fetcher - Fetches skill data from skills.sh and ClawHub
+ * Platform Fetcher - Fetches skill data from skills.sh
  *
  * Handles API calls and data retrieval from external skill registries
  */
@@ -30,14 +30,6 @@ interface PlatformEndpoint {
  * API endpoints for different platforms
  */
 const PLATFORM_ENDPOINTS: Record<RegistryType, PlatformEndpoint> = {
-  clawhub: {
-    base: 'https://clawhub.com',
-    skills: '/api/skills',
-    search: '/api/skills',
-    popular: '/api/skills?sort=downloads',
-    trending: '/api/skills?sort=updated',
-    leaderboard: '/api/leaderboard'
-  },
   'skills-sh': {
     base: 'https://skills.sh',
     skills: '/api/skills',
@@ -69,40 +61,10 @@ export class PlatformFetcher {
   }
 
   /**
-   * Fetch hot skills from all platforms
+   * Fetch hot skills from skills.sh
    */
   async fetchHot(platform: string = 'skills-sh', limit: number = 20): Promise<LeaderboardEntry[]> {
-    // If 'all', fetch from both platforms
-    if (platform === 'all') {
-      const results = await Promise.allSettled([
-        this.fetchLeaderboard('hot', 'skills-sh', limit),
-        this.fetchLeaderboard('hot', 'clawhub', limit)
-      ]);
-
-      const skills: RemoteSkill[] = [];
-      results.forEach(result => {
-        if (result.status === 'fulfilled') {
-          skills.push(...result.value);
-        }
-      });
-
-      // Sort by downloads and dedupe
-      const seen = new Set<string>();
-      const unique = skills.filter(s => {
-        if (seen.has(s.name)) return false;
-        seen.add(s.name);
-        return true;
-      });
-
-      // If no results from platforms, return mock data
-      if (unique.length === 0) {
-        return this.convertToLeaderboard(this.getMockLeaderboardData('hot', limit));
-      }
-
-      return this.convertToLeaderboard(unique.slice(0, limit));
-    }
-
-    const skills = await this.fetchLeaderboard('hot', platform as RegistryType, limit);
+    const skills = await this.fetchLeaderboard('hot', 'skills-sh', limit);
 
     // If no results, return mock data
     if (skills.length === 0) {
@@ -123,7 +85,7 @@ export class PlatformFetcher {
   /**
    * Fetch all-time popular skills
    */
-  async fetchAllTime(platform: RegistryType = 'clawhub', limit: number = 20): Promise<LeaderboardEntry[]> {
+  async fetchAllTime(platform: RegistryType = 'skills-sh', limit: number = 20): Promise<LeaderboardEntry[]> {
     const skills = await this.fetchLeaderboard('all-time', platform, limit);
     return this.convertToLeaderboard(skills);
   }
@@ -135,7 +97,7 @@ export class PlatformFetcher {
     query: string,
     options: DiscoveryOptions = {}
   ): Promise<RemoteSkill[]> {
-    const platforms = options.platforms || ['clawhub', 'skills-sh'];
+    const platforms = options.platforms || ['skills-sh'];
     const results: RemoteSkill[] = [];
 
     for (const platform of platforms) {
@@ -211,14 +173,6 @@ export class PlatformFetcher {
         'all-time': '/api/leaderboard/all'
       };
       url = `${endpoints.base}${pathMap[type]}`;
-    } else if (platform === 'clawhub') {
-      // clawhub uses /api/skills with sort params
-      const pathMap: Record<string, string> = {
-        'hot': endpoints.leaderboard || '/api/leaderboard',
-        'trending': endpoints.trending || '/api/skills?sort=updated',
-        'all-time': endpoints.skills || '/api/skills'
-      };
-      url = `${endpoints.base}${pathMap[type]}?limit=${limit}`;
     } else {
       url = `${endpoints.base}/api/leaderboard`;
     }
@@ -296,21 +250,23 @@ export class PlatformFetcher {
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as Record<string, unknown>;
+      // Use source field (skills.sh API) or repository or construct from owner
+      const repoValue = item.source || item.repository || (item.owner ? `${item.owner}/${item.name}` : '');
       skills.push({
-        name: String(item.name || item.skill_name || ''),
-        owner: String(item.author || item.owner || 'unknown'),
-        repository: String(item.repository || `${item.owner}/${item.name}`),
+        name: String(item.skillId || item.name || item.skill_name || ''),
+        owner: String(item.source ? String(item.source).split('/')[0] : (item.author || item.owner || 'unknown')),
+        repository: repoValue ? String(repoValue) : '',
         description: String(item.description || ''),
         platform,
         stats: {
-          downloads: Number(item.downloads || item.install_count || 0),
+          downloads: Number(item.installs || item.downloads || item.install_count || 0),
           change24h: Number(item.change_1h || item.change_24h || 0),
           changePercent: item.change_percent ? Number(item.change_percent) : undefined,
           rating: item.rating ? Number(item.rating) : undefined,
           stars: item.stars ? Number(item.stars) : undefined
         },
         tags: Array.isArray(item.tags || item.keywords) ? (item.tags || item.keywords) as string[] : [],
-        url: String(item.url || `https://${platform === 'clawhub' ? 'clawhub.com' : 'skills.sh'}/skills/${item.name}`)
+        url: String(item.url || `https://skills.sh/${repoValue}/${item.skillId || item.name}`)
       });
     }
 
@@ -369,28 +325,40 @@ export class PlatformFetcher {
 
   /**
    * Get mock leaderboard data for testing/offline
+   * Data sourced from skills.sh real listings (curated page)
    */
-  private getMockLeaderboardData(type: LeaderboardType, limit: number): RemoteSkill[] {
-    const mockSkills: RemoteSkill[] = [
+  private getMockLeaderboardData(type: LeaderboardType, limit: number, platform?: RegistryType): RemoteSkill[] {
+    // Real skills from skills.sh curated page (updated 2026-03-17)
+    const skills: RemoteSkill[] = [
       {
         name: 'find-skills',
         owner: 'vercel-labs',
         repository: 'vercel-labs/skills',
         description: 'Discover and find relevant skills for your agent',
         platform: 'skills-sh',
-        stats: { downloads: 752, change24h: 327 },
+        stats: { downloads: 581900, change24h: 0 },
         tags: ['discovery', 'search', 'skills'],
         url: 'https://skills.sh/vercel-labs/skills/find-skills'
       },
       {
-        name: 'skill-creator',
-        owner: 'anthropics',
-        repository: 'anthropics/skills',
-        description: 'Create new skills and improve existing skills',
+        name: 'web-design-guidelines',
+        owner: 'vercel-labs',
+        repository: 'vercel-labs/agent-skills',
+        description: 'Web design guidelines and best practices for modern applications',
         platform: 'skills-sh',
-        stats: { downloads: 145, change24h: 80 },
-        tags: ['skill', 'creator', 'development'],
-        url: 'https://skills.sh/anthropics/skills/skill-creator'
+        stats: { downloads: 171400, change24h: 0 },
+        tags: ['design', 'web', 'guidelines'],
+        url: 'https://skills.sh/vercel-labs/agent-skills/web-design-guidelines'
+      },
+      {
+        name: 'vercel-react-best-practices',
+        owner: 'vercel-labs',
+        repository: 'vercel-labs/agent-skills',
+        description: 'React best practices for Vercel deployments',
+        platform: 'skills-sh',
+        stats: { downloads: 216900, change24h: 0 },
+        tags: ['react', 'vercel', 'best-practices'],
+        url: 'https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices'
       },
       {
         name: 'frontend-design',
@@ -398,33 +366,73 @@ export class PlatformFetcher {
         repository: 'anthropics/skills',
         description: 'Create distinctive, production-grade frontend interfaces',
         platform: 'skills-sh',
-        stats: { downloads: 153, change24h: 51 },
+        stats: { downloads: 164500, change24h: 0 },
         tags: ['frontend', 'design', 'ui'],
         url: 'https://skills.sh/anthropics/skills/frontend-design'
       },
       {
-        name: 'self-improving-agent',
-        owner: 'pskoett',
-        repository: 'pskoett/self-improving-agent',
-        description: 'Captures learnings and corrections for continuous improvement',
-        platform: 'clawhub',
-        stats: { downloads: 227000, change24h: 500, rating: 4.9 },
-        tags: ['agent', 'learning', 'improvement'],
-        url: 'https://clawhub.com/skills/self-improving-agent'
+        name: 'skill-creator',
+        owner: 'anthropics',
+        repository: 'anthropics/skills',
+        description: 'Create new skills and improve existing skills',
+        platform: 'skills-sh',
+        stats: { downloads: 86700, change24h: 0 },
+        tags: ['skill', 'creator', 'development'],
+        url: 'https://skills.sh/anthropics/skills/skill-creator'
       },
       {
-        name: 'api-gateway',
-        owner: 'byungkyu',
-        repository: 'byungkyu/api-gateway',
-        description: 'Connect to 100+ APIs with managed OAuth',
-        platform: 'clawhub',
-        stats: { downloads: 44800, change24h: 200, rating: 4.5 },
-        tags: ['api', 'oauth', 'integration'],
-        url: 'https://clawhub.com/skills/api-gateway'
+        name: 'vercel-composition-patterns',
+        owner: 'vercel-labs',
+        repository: 'vercel-labs/agent-skills',
+        description: 'Vercel composition patterns for scalable applications',
+        platform: 'skills-sh',
+        stats: { downloads: 87300, change24h: 0 },
+        tags: ['vercel', 'patterns', 'architecture'],
+        url: 'https://skills.sh/vercel-labs/agent-skills/vercel-composition-patterns'
+      },
+      {
+        name: 'pdf',
+        owner: 'anthropics',
+        repository: 'anthropics/skills',
+        description: 'Work with PDF files - extract, create, and manipulate',
+        platform: 'skills-sh',
+        stats: { downloads: 40200, change24h: 0 },
+        tags: ['pdf', 'document', 'extraction'],
+        url: 'https://skills.sh/anthropics/skills/pdf'
+      },
+      {
+        name: 'pptx',
+        owner: 'anthropics',
+        repository: 'anthropics/skills',
+        description: 'Create and edit PowerPoint presentations',
+        platform: 'skills-sh',
+        stats: { downloads: 35900, change24h: 0 },
+        tags: ['pptx', 'powerpoint', 'presentation'],
+        url: 'https://skills.sh/anthropics/skills/pptx'
+      },
+      {
+        name: 'docx',
+        owner: 'anthropics',
+        repository: 'anthropics/skills',
+        description: 'Create and edit Word documents',
+        platform: 'skills-sh',
+        stats: { downloads: 31700, change24h: 0 },
+        tags: ['docx', 'word', 'document'],
+        url: 'https://skills.sh/anthropics/skills/docx'
+      },
+      {
+        name: 'xlsx',
+        owner: 'anthropics',
+        repository: 'anthropics/skills',
+        description: 'Create and edit Excel spreadsheets',
+        platform: 'skills-sh',
+        stats: { downloads: 29100, change24h: 0 },
+        tags: ['xlsx', 'excel', 'spreadsheet'],
+        url: 'https://skills.sh/anthropics/skills/xlsx'
       }
     ];
 
-    return mockSkills.slice(0, limit);
+    return skills.slice(0, limit);
   }
 
   /**

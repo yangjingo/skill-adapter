@@ -58,36 +58,36 @@ export class Evaluator {
   private compareMetrics(baseline: MetricsSummary, evolved: MetricsSummary): MetricComparison[] {
     return [
       this.compareMetric(
-        '平均对话轮数',
+        'Avg User Rounds',
         'Avg User Rounds',
         baseline.avgUserRounds,
         evolved.avgUserRounds,
         true,  // Lower is better
-        '达到目标所需的用户对话轮数'
+        'Number of user conversation rounds to reach goal'
       ),
       this.compareMetric(
-        '工具调用次数',
+        'Avg Tool Calls',
         'Avg Tool Calls',
         baseline.avgToolCalls,
         evolved.avgToolCalls,
         true,  // Lower is better
-        '完成相同任务所需的工具调用次数'
+        'Number of tool calls to complete same task'
       ),
       this.compareMetric(
-        'Token 消耗',
+        'Total Tokens',
         'Total Tokens',
         baseline.totalTokenInput + baseline.totalTokenOutput,
         evolved.totalTokenInput + evolved.totalTokenOutput,
         true,  // Lower is better
-        'Token 消耗（Input + Output）'
+        'Token consumption (Input + Output)'
       ),
       this.compareMetric(
-        '上下文占用',
+        'Context Load',
         'Context Load',
         baseline.avgContextLoad,
         evolved.avgContextLoad,
         false,  // Higher is not necessarily better, but acceptable for workspace context
-        '环境注入对 Context Window 的占用'
+        'Context window usage from environment injection'
       )
     ];
   }
@@ -159,20 +159,20 @@ export class Evaluator {
     const improvements = metrics.filter(m => m.status === 'good');
     const degradations = metrics.filter(m => m.status === 'bad');
 
-    let conclusion = `${statusEmoji} **进化结论：** `;
+    let conclusion = `${statusEmoji} **Evolution Result:** `;
 
     if (status === 'improved') {
-      conclusion += `Skill 进化成功！主要改进：\n`;
+      conclusion += `Skill evolved successfully! Key improvements:\n`;
       for (const m of improvements) {
-        conclusion += `- ${m.name} 减少 ${Math.abs(m.delta)}%\n`;
+        conclusion += `- ${m.name} reduced by ${Math.abs(m.delta)}%\n`;
       }
     } else if (status === 'degraded') {
-      conclusion += `Skill 进化存在问题。需要关注：\n`;
+      conclusion += `Skill evolution has issues. Attention needed:\n`;
       for (const m of degradations) {
-        conclusion += `- ${m.name} 增加 ${m.delta}%\n`;
+        conclusion += `- ${m.name} increased by ${m.delta}%\n`;
       }
     } else {
-      conclusion += `进化效果持平，建议继续观察或调整策略。`;
+      conclusion += `Evolution neutral. Continue monitoring or adjust strategy.`;
     }
 
     return conclusion;

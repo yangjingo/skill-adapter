@@ -19,6 +19,7 @@
  *
  * Evolution:
  * - sa evolve [skill]    Run evolution analysis (includes workspace)
+ * - sa summary <skill>   View evolution metrics table
  * - sa log [skill]       View version history (git-log style)
  */
 
@@ -32,6 +33,10 @@ import ora from 'ora';
 
 // Core modules
 import { telemetry, WorkspaceAnalyzer, SessionAnalyzer, skillPatcher, evaluator, EvolutionDatabase, EvolutionRecord, summaryGenerator, VERSION } from './index';
+
+// Evolution Engine
+import { EvolutionEngine, evolutionEngine, EvolutionRecommendation } from './core/evolution-engine';
+import { aiEvolutionEngine, AIRecommendation, modelConfigLoader } from './core/evolution';
 
 // New modules
 import { securityEvaluator } from './core/security';
@@ -166,15 +171,14 @@ program
             console.log(`#${entry.rank.toString().padEnd(4)} | ${entry.skill.stats.downloads.toString().padEnd(9)} | ${entry.skill.name}`);
           }
         } else {
-          console.log('  (暂无数据)');
+          console.log('  (No data available)');
         }
 
-        console.log('\n📌 下一步操作:');
-        console.log('   sa import find-skills            # 使用官方 CLI 安装（默认）');
-        console.log('   sa import find-skills --no-npx   # 使用内置导入');
-        console.log('   sa import vercel-labs/agent-skills  # 从 skills.sh 安装');
+        console.log('\n📌 Next Steps:');
+        console.log('   sa import <skill>            # Install a skill');
+        console.log('   sa import <owner/repo>       # Install from skills.sh');
       } catch (error) {
-        console.error(`❌ 获取技能失败: ${error}`);
+        console.error(`❌ Failed to fetch skills: ${error}`);
       }
       return;
     }
@@ -197,7 +201,7 @@ program
     const useOfficialCli = !options.noNpx && !isLocalPath && !isOpenClawSkill && !source.startsWith('http');
 
     if (useOfficialCli) {
-      console.log('🔧 使用官方 skills CLI 安装...\n');
+      console.log('🔧 Installing with official CLI...\n');
       try {
         const { execSync } = require('child_process');
 
@@ -210,7 +214,7 @@ program
           // Direct repo reference - use skills.sh format
           const skillsShUrl = source.includes('skills.sh') ? source : `https://skills.sh/${source}`;
           command = `npx skills add ${source.includes('/') && !source.includes('skills.sh') ? source : skillsShUrl.replace('https://skills.sh/', '')}`;
-          console.log(`   来源: ${skillsShUrl}\n`);
+          console.log(`   Source: ${skillsShUrl}\n`);
         } else {
           // Skill name - search for it
           const searchResults = await platformFetcher.search(source, { limit: 3, platforms: ['skills-sh'] });
@@ -222,11 +226,11 @@ program
             // Use owner/repo format for npx skills add
             const repoRef = repo.includes('github.com') ? repo.replace('https://github.com/', '') : repo;
             command = `npx skills add ${repoRef} --skill ${found.name}`;
-            console.log(`   来源: https://skills.sh/${repoRef}`);
-            console.log(`   技能: ${found.name}\n`);
+            console.log(`   Source: https://skills.sh/${repoRef}`);
+            console.log(`   Skill: ${found.name}\n`);
           } else {
             // Not found - try as direct skill name
-            console.log(`   未找到技能 "${source}"，尝试直接安装...\n`);
+            console.log(`   Skill "${source}" not found, trying direct install...\n`);
             command = `npx skills add ${source}`;
           }
         }
@@ -234,23 +238,23 @@ program
         console.log(`$ ${command}\n`);
         execSync(command, { stdio: 'inherit' });
 
-        console.log('\n✅ 安装成功!');
-        console.log('\n📌 下一步操作:');
-        console.log('   sa info              # 查看所有已安装技能');
-        console.log(`   sa info ${skillName}  # 查看技能详情`);
-        console.log('   sa evolve <skill>    # 分析并优化技能');
+        console.log('\n✅ Installation complete!');
+        console.log('\n📌 Next Steps:');
+        console.log('   sa info              # View installed skills');
+        console.log(`   sa info ${skillName}  # View skill details`);
+        console.log('   sa evolve <skill>    # Analyze and optimize');
         return;
       } catch (error) {
         // Official CLI failed - provide helpful error
-        console.error('\n❌ 官方 CLI 安装失败\n');
-        console.log('💡 可能的原因和解决方案:\n');
-        console.log('   1. 技能名称或仓库不正确');
-        console.log('      sa import                    # 查看热门技能列表\n');
-        console.log('   2. 使用内置导入（跳过官方 CLI）');
+        console.error('\n❌ Official CLI installation failed\n');
+        console.log('💡 Possible solutions:\n');
+        console.log('   1. Check skill name or repository');
+        console.log('      sa import                    # Browse hot skills\n');
+        console.log('   2. Use built-in import (skip official CLI)');
         console.log(`      sa import ${source} --no-npx\n`);
-        console.log('📌 手动安装命令:');
+        console.log('📌 Manual install:');
         console.log(`   npx skills add <owner/repo> --skill <name>`);
-        console.log(`   例如: npx skills add vercel-labs/agent-skills --skill web-design-guidelines`);
+        console.log(`   Example: npx skills add vercel-labs/agent-skills --skill web-design-guidelines`);
         return;
       }
     }
@@ -515,17 +519,17 @@ program
       });
 
       const sourceLabel = getSourceLabel(sourceType, source).split(':')[0];
-      console.log(`\n✅ 安装成功!`);
-      console.log(`   技能: ${skillPackage.manifest.name} (v${skillPackage.manifest.version})`);
-      console.log(`   来源: ${sourceLabel}`);
+      console.log(`\n✅ Installed successfully!`);
+      console.log(`   Skill: ${skillPackage.manifest.name} (v${skillPackage.manifest.version})`);
+      console.log(`   Source: ${sourceLabel}`);
 
-      console.log('\n📌 下一步操作:');
-      console.log(`   sa info ${skillPackage.manifest.name}       # 查看技能详情`);
-      console.log(`   sa evolve ${skillPackage.manifest.name}     # 分析并优化技能`);
-      console.log(`   sa log ${skillPackage.manifest.name}        # 查看版本历史`);
+      console.log('\n📌 Next Steps:');
+      console.log(`   sa info ${skillPackage.manifest.name}       # View skill details`);
+      console.log(`   sa evolve ${skillPackage.manifest.name}     # Analyze and optimize`);
+      console.log(`   sa log ${skillPackage.manifest.name}        # View version history`);
 
     } catch (error) {
-      console.error(`❌ 失败: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`❌ Failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
 
@@ -635,10 +639,10 @@ program
         }
       }
 
-      console.log('\n📌 下一步操作:');
-      console.log('   sa info <skill-name>       # 查看具体技能详情');
-      console.log('   sa info -p imported        # 只显示已导入的技能');
-      console.log('   sa import <skill-name>     # 导入新技能');
+      console.log('\n📌 Next Steps:');
+      console.log('   sa info <skill-name>       # View skill details');
+      console.log('   sa info -p imported        # List imported skills only');
+      console.log('   sa import <skill-name>     # Import a new skill');
 
     } else {
       // Detail mode - show specific skill info
@@ -802,10 +806,10 @@ program
           }
         }
 
-        console.log('\n📌 下一步操作:');
-        console.log(`   sa evolve ${skillName}        # 分析并优化技能`);
-        console.log(`   sa log ${skillName}           # 查看版本历史`);
-        console.log(`   sa share ${skillName}         # 分享技能`);
+        console.log('\n📌 Next Steps:');
+        console.log(`   sa summary ${skillName}      # View evolution metrics`);
+        console.log(`   sa evolve ${skillName}       # Analyze and optimize`);
+        console.log(`   sa log ${skillName}          # View version history`);
         return;
       }
 
@@ -1077,6 +1081,10 @@ program
     const db = new EvolutionDatabase();
     const preferences = configManager.getPreferences();
 
+    // Context variables (used for fallback and legacy logic)
+    let soulContent = '';
+    let memoryContent = '';
+
     // Determine output level
     const outputLevel = options.debug ? 'debug' : options.verbose ? 'verbose' : preferences.outputLevel;
     const isSimple = outputLevel === 'simple';
@@ -1117,9 +1125,9 @@ program
         console.log('Workspace analysis not available');
       }
 
-      console.log('\n📌 下一步操作:');
-      console.log('   sa evolve <skill-name>     # 分析具体技能');
-      console.log('   sa import <skill-name>     # 导入新技能');
+      console.log('\n📌 Next Steps:');
+      console.log('   sa evolve <skill-name>     # Analyze specific skill');
+      console.log('   sa import <skill-name>     # Import a new skill');
       return;
     }
 
@@ -1223,590 +1231,320 @@ program
     };
 
     // Find skill with spinner
-    const findSpinner = ora('查找技能...').start();
+    const findSpinner = ora('Finding skill...').start();
     const skillLocation = findSkill(skillName);
 
     if (!skillLocation) {
-      findSpinner.fail(`未找到技能 "${skillName}"`);
-      console.log('\n📋 搜索位置:');
+      findSpinner.fail(`Skill "${skillName}" not found`);
+      console.log('\n📋 Search locations:');
       console.log('   • Database: ~/.skill-adapter/evolution.jsonl');
       console.log('   • OpenClaw: ~/.openclaw/skills/');
       console.log('   • Claude Code: ~/.claude/skills/');
-      console.log('\n📌 尝试:');
-      console.log('   sa info -p openclaw    # 查看可用 OpenClaw 技能');
-      console.log('   sa info -p claudecode  # 查看可用 Claude Code 技能');
+      console.log('\n📌 Try:');
+      console.log('   sa info -p openclaw    # View OpenClaw skills');
+      console.log('   sa info -p claudecode  # View Claude Code skills');
       return;
     }
 
-    findSpinner.succeed(`找到: ${skillName} (${skillLocation.source.split(':')[0]})`);
+    findSpinner.succeed(`Found: ${skillName} (${skillLocation.source.split(':')[0]})`);
 
     // Record usage
     configManager.recordSkillUsage(skillName);
 
     const { content: skillContent, dir: skillDir, source: skillSource, foundInDb, needsImport } = skillLocation;
 
-    if (isSimple) {
-      console.log(`\n📦 ${skillName} (${skillSource})`);
-    } else {
-      console.log(`\n📦 分析: ${skillName}`);
-      console.log(`   来源: ${skillSource}`);
-      console.log(`   路径: ${skillDir}`);
-      if (foundInDb) {
-        console.log(`   版本: ${db.getLatestVersion(skillName)}`);
-        console.log(`   记录: ${db.getRecords(skillName).length}`);
-      } else {
-        console.log(`   状态: 未在数据库中追踪`);
-      }
-      if (needsImport) {
-        console.log(`   📌 将自动导入到数据库`);
+    // ═══════════════════════════════════════════
+    // STEP 1: AI Configuration
+    // ═══════════════════════════════════════════
+    const useAI = aiEvolutionEngine.isAvailable();
+    const modelInfo = aiEvolutionEngine.getModelInfo();
+
+    if (useAI) {
+      console.log('\n📋 AI Configuration:');
+      console.log(`   ├─ Model: ${modelInfo.modelId}`);
+
+      // Load config to show endpoint
+      const configResult = modelConfigLoader.load();
+      if (configResult.success && configResult.config) {
+        const config = configResult.config;
+        console.log(`   ├─ Endpoint: ${config.baseUrl || 'https://api.anthropic.com (default)'}`);
+        console.log(`   └─ API Key: ${config.apiKey.slice(0, 10)}...${config.apiKey.slice(-4)}`);
       }
     }
 
     // ═══════════════════════════════════════════
-    // STEP 1: Analyze Workspace
+    // STEP 2: Skill Info
     // ═══════════════════════════════════════════
-    const workspaceSpinner = ora('分析工作区...').start();
+    console.log(`\n📄 Skill: ${skillName}`);
+    console.log(`   ├─ Source: ${skillSource}`);
+    console.log(`   ├─ Path: ${skillDir}`);
+    console.log(`   └─ Size: ${skillContent.length} bytes`);
+
+    if (foundInDb) {
+      console.log(`   Version: ${db.getLatestVersion(skillName)}`);
+    }
+    if (needsImport) {
+      console.log(`   📌 Will auto-import to database`);
+    }
+
+    // ═══════════════════════════════════════════
+    // STEP 3: Static Analysis
+    // ═══════════════════════════════════════════
+    const staticSpinner = ora('📊 Analyzing static skill content...').start();
+    const lines = skillContent.split('\n');
+    const sections = (skillContent.match(/^##\s/gm) || []).length;
+    const codeBlocks = (skillContent.match(/```/g) || []).length / 2;
+    const links = (skillContent.match(/\[.*?\]\(.*?\)/g) || []).length;
+
+    staticSpinner.succeed('Static analysis complete');
+    console.log(`   ├─ Sections: ${sections}`);
+    console.log(`   ├─ Code blocks: ${Math.floor(codeBlocks)}`);
+    console.log(`   └─ Links: ${links}`);
+
+    // ═══════════════════════════════════════════
+    // STEP 4: Dynamic Context
+    // ═══════════════════════════════════════════
+    const contextSpinner = ora('📂 Loading dynamic context...').start();
+
+    // Workspace info
     const workspaceAnalyzer = new WorkspaceAnalyzer(process.cwd());
     const workspaceConfig = workspaceAnalyzer.analyze();
 
-    const workspaceSummary = `${workspaceConfig.techStack.languages.join(', ') || 'Unknown'} + ${workspaceConfig.techStack.packageManager}`;
-    workspaceSpinner.succeed(`工作区: ${workspaceSummary}`);
+    // Build evolution context
+    let evolutionContext;
+    let evolutionRecommendations: EvolutionRecommendation[] = [];
+    let aiRecommendations: AIRecommendation[] = [];
 
-    if (!isSimple) {
-      console.log(`   根目录: ${process.cwd()}`);
-      console.log(`   语言: ${workspaceConfig.techStack.languages.join(', ') || '未检测到'}`);
-      console.log(`   框架: ${workspaceConfig.techStack.frameworks.join(', ') || '无'}`);
-      console.log(`   包管理器: ${workspaceConfig.techStack.packageManager}`);
+    try {
+      const daysToAnalyze = parseInt(options.last) || 10;
+      evolutionContext = await evolutionEngine.buildEvolutionContext(skillName, daysToAnalyze);
+    } catch {
+      // Create basic context
+      evolutionContext = {
+        sessionPatterns: {
+          toolSequences: [],
+          errorPatterns: [],
+          successPatterns: [],
+          userIntents: [],
+          summary: { totalSessions: 0, avgToolCalls: 0, errorRate: 0, topTools: [] }
+        },
+        memoryRules: [],
+        behaviorStyle: {
+          communicationStyle: 'direct' as const,
+          boundaries: [],
+          preferences: [],
+          avoidPatterns: [],
+          source: 'claude_code' as const
+        },
+        crossSkillPatterns: [],
+      };
     }
 
-    // ═══════════════════════════════════════════
-    // STEP 2: Analyze Skill Content
-    // ═══════════════════════════════════════════
-    const contentSpinner = ora('分析技能内容...').start();
-    const lines = skillContent.split('\n');
-    const sections = lines.filter(l => l.startsWith('#')).length;
-    const codeBlocks = (skillContent.match(/```/g) || []).length / 2;
+    const soulPrefs = evolutionContext.behaviorStyle.boundaries.length > 0 ||
+                      evolutionContext.behaviorStyle.preferences.length > 0;
+    const hasMemory = evolutionContext.memoryRules.length > 0;
 
-    contentSpinner.succeed(`技能大小: ${(skillContent.length / 1024).toFixed(1)} KB, ${sections} 章节`);
-
-    if (!isSimple) {
-      console.log(`   行数: ${lines.length}`);
-      console.log(`   代码块: ${codeBlocks}`);
-    }
+    contextSpinner.succeed('Dynamic context loaded');
+    console.log(`   ├─ SOUL preferences: ${soulPrefs ? '✓' : '✗'}`);
+    console.log(`   ├─ MEMORY rules: ${evolutionContext.memoryRules.length} rules`);
+    console.log(`   ├─ Workspace: ${workspaceConfig.techStack.languages.join(', ') || 'not detected'}`);
+    console.log(`   └─ Session patterns: ${evolutionContext.sessionPatterns.toolSequences.length} patterns`);
 
     // ═══════════════════════════════════════════
-    // STEP 2.5: Load OpenClaw Context (SOUL.md, MEMORY.md)
+    // STEP 5: AI Evolution with Streaming
     // ═══════════════════════════════════════════
-    const contextSpinner = ora('加载上下文...').start();
-    let soulContent = '';
-    let memoryContent = '';
-    const openClawWorkspacePath = findOpenClawWorkspacePath();
+    console.log('\n' + '─'.repeat(60));
+    console.log('🤖 AI Evolution Process');
+    console.log('─'.repeat(60) + '\n');
 
-    if (openClawWorkspacePath) {
-      const soulPath = path.join(openClawWorkspacePath, 'SOUL.md');
-      const memoryPath = path.join(openClawWorkspacePath, 'MEMORY.md');
+    const thinkingSpinner = ora('Connecting to AI model...').start();
+    let thinkingBuffer = '';
+    let thinkingStarted = false;
+    let lineBuffer = ''; // Buffer for incomplete lines
 
-      if (fs.existsSync(soulPath)) {
-        soulContent = fs.readFileSync(soulPath, 'utf-8');
-      }
-
-      if (fs.existsSync(memoryPath)) {
-        memoryContent = fs.readFileSync(memoryPath, 'utf-8');
-      }
-    }
-
-    if (soulContent || memoryContent) {
-      contextSpinner.succeed(`加载上下文: SOUL.md ${soulContent ? '✓' : '✗'}, MEMORY.md ${memoryContent ? '✓' : '✗'}`);
-    } else {
-      contextSpinner.succeed('无额外上下文');
-    }
-
-    // ═══════════════════════════════════════════
-    // STEP 3: Analyze Environment
-    // ═══════════════════════════════════════════
-    const envSpinner = ora('分析环境...').start();
-    const openClawPath = findOpenClawSkillsPath();
-    let openClawSkillCount = 0;
-    let claudeCodeCommandCount = 0;
-
-    if (openClawPath) {
-      openClawSkillCount = fs.readdirSync(openClawPath).filter(f =>
-        fs.statSync(path.join(openClawPath, f)).isDirectory()
-      ).length;
-    }
-
-    const claudeCodePath = findClaudeCodeSkillsPath();
-    if (claudeCodePath) {
-      const commandsPath = path.join(claudeCodePath, 'commands');
-      if (fs.existsSync(commandsPath)) {
-        claudeCodeCommandCount = fs.readdirSync(commandsPath).filter(f => f.endsWith('.md')).length;
-      }
-    }
-
-    envSpinner.succeed(`环境: OpenClaw ${openClawSkillCount} 技能, Claude Code ${claudeCodeCommandCount} 命令`);
-
-    // ═══════════════════════════════════════════
-    // STEP 4: Execute Optimizations
-    // ═══════════════════════════════════════════
-    const optimizeSpinner = ora('执行优化...').start();
-
-    interface OptimizationResult {
-      category: string;
-      action: string;
-      details?: string[];
-      status: 'applied' | 'skipped' | 'added';
-    }
-
-    const optimizations: OptimizationResult[] = [];
-    let newContent = skillContent;
-    const pkgManager = workspaceConfig.techStack.packageManager;
-
-    // 1. 路径本地化优化
-      const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-      if (homeDir && (newContent.includes('/home/') || newContent.includes('/Users/'))) {
-        const originalContent = newContent;
-        newContent = newContent.replace(new RegExp(homeDir, 'g'), '${HOME}');
-        newContent = newContent.replace(/\/Users\/[^/]+/g, '${HOME}');
-        newContent = newContent.replace(/\/home\/[^/]+/g, '${HOME}');
-
-        if (newContent !== originalContent) {
-          optimizations.push({
-            category: '路径本地化',
-            action: '将绝对路径替换为 ${HOME}',
-            status: 'applied'
-          });
-        }
-      }
-
-      // 2. 包管理器适配
-      if (pkgManager !== 'npm' && newContent.includes('npm ')) {
-        const originalContent = newContent;
-        newContent = newContent.replace(/npm run/g, `${pkgManager} run`);
-        newContent = newContent.replace(/npm install/g, `${pkgManager} install`);
-        newContent = newContent.replace(/npm i /g, `${pkgManager} `);
-
-        if (newContent !== originalContent) {
-          optimizations.push({
-            category: '包管理器',
-            action: `将 npm 命令替换为 ${pkgManager}`,
-            status: 'applied'
-          });
-        }
-      }
-
-      // 3. 添加环境适配说明
-      const envAdaptations: string[] = [];
-
-      // 检测语言环境
-      if (workspaceConfig.techStack.languages.includes('TypeScript')) {
-        if (!newContent.includes('TypeScript') && !newContent.includes('typescript')) {
-          envAdaptations.push(`工作区使用 TypeScript，建议添加类型定义示例`);
-        }
-      }
-
-      // 检测 Python 环境
-      if (newContent.includes('python ') || newContent.includes('pip ')) {
-        if (!newContent.includes('venv') && !newContent.includes('conda')) {
-          envAdaptations.push(`Python 技能建议使用虚拟环境 (venv/conda)`);
-        }
-      }
-
-      // 检测 Docker 环境
-      if (newContent.includes('docker ') && !newContent.includes('docker --version')) {
-        envAdaptations.push(`使用前请确保 Docker 已启动: docker --version`);
-      }
-
-      // 添加环境适配说明到 SKILL.md
-      if (envAdaptations.length > 0) {
-        const envSection = `\n\n## 环境适配提示\n\n> 由 Skill-Adapter 自动生成 (基于当前工作区)\n\n${envAdaptations.map(e => `- ${e}`).join('\n')}\n`;
-        // 检查是否已存在该部分
-        if (!newContent.includes('## 环境适配提示')) {
-          newContent += envSection;
-          optimizations.push({
-            category: '环境适配',
-            action: `注入环境适配提示`,
-            details: envAdaptations,
-            status: 'added'
-          });
-        }
-      }
-
-      // 4. SOUL.md 风格注入
-      if (soulContent) {
-        const styleNotes: string[] = [];
-
-        // 检测沟通风格
-        if (soulContent.includes('毒舌') || soulContent.includes('直说')) {
-          styleNotes.push('直接简洁，避免客套');
-        }
-        if (soulContent.includes('Private things')) {
-          styleNotes.push('尊重隐私边界');
-        }
-
-        if (styleNotes.length > 0 && !newContent.includes('## 交互风格')) {
-          const styleSection = `\n\n## 交互风格\n\n> 基于 SOUL.md 自动注入\n\n${styleNotes.map(s => `- ${s}`).join('\n')}\n`;
-          newContent += styleSection;
-          optimizations.push({
-            category: '风格注入',
-            action: `注入交互风格`,
-            details: styleNotes,
-            status: 'added'
-          });
-        }
-      }
-
-      // 5. MEMORY.md 深度学习 (结构化解析)
-      if (memoryContent) {
-        // 5.1 提取错误规避记录 (*Memory 01*: 格式)
-        const errorAvoidance: string[] = [];
-        // 匹配格式: - *Memory 01*: 内容
-        const errorMatches = memoryContent.match(/\*\s*Memory\s*\d+\*:[^\n]+/gi);
-        if (errorMatches) {
-          for (const match of errorMatches.slice(0, 5)) {
-            // 清理格式: *Memory 01*: 内容 -> 内容
-            const cleaned = match.replace(/\*\s*Memory\s*\d+\*:\s*/i, '').trim();
-            if (cleaned.length > 10) {
-              errorAvoidance.push(cleaned);
-            }
+    try {
+      aiRecommendations = await aiEvolutionEngine.generateRecommendations({
+        skillName,
+        skillContent,
+        soulPreferences: {
+          communicationStyle: evolutionContext.behaviorStyle.communicationStyle,
+          boundaries: evolutionContext.behaviorStyle.boundaries.slice(0, 3),
+        },
+        memoryRules: evolutionContext.memoryRules.slice(0, 5).map(r => ({
+          category: r.category,
+          rule: r.rule,
+        })),
+        workspaceInfo: {
+          languages: workspaceConfig.techStack.languages.slice(0, 3),
+          packageManager: workspaceConfig.techStack.packageManager,
+        },
+      }, {
+        onThinking: (text) => {
+          if (!thinkingStarted) {
+            thinkingSpinner.stop();
+            console.log('\n💭 AI Thinking (streaming):\n');
+            console.log('─'.repeat(40));
+            thinkingStarted = true;
           }
-        }
+          // Buffer text and output only complete lines
+          lineBuffer += text;
+          const lines = lineBuffer.split('\n');
+          // Keep the last incomplete line in buffer
+          lineBuffer = lines.pop() || '';
 
-        // 5.2 提取核心原则 (如 秒回原则、验证闭环)
-        const corePrinciples: string[] = [];
-        const principlePatterns = [
-          { pattern: /秒回原则[：:]\s*([^\n]+)/, label: '秒回原则' },
-          { pattern: /验证闭环[：:]\s*([^\n]+)/, label: '验证闭环' },
-          { pattern: /原子化提交[：:]\s*([^\n]+)/, label: '原子化提交' },
-          { pattern: /按需读取[：:]\s*([^\n]+)/, label: '按需读取' },
-          { pattern: /工具化思维[：:]\s*([^\n]+)/, label: '工具化思维' }
-        ];
-
-        for (const { pattern, label } of principlePatterns) {
-          const match = memoryContent.match(pattern);
-          if (match) {
-            corePrinciples.push(`${label}: ${match[1].trim()}`);
-          }
-        }
-
-        // 5.3 检测已有经验记录部分
-        const hasExistingMemories = newContent.includes('## 经验记录') || newContent.includes('## 错误规避');
-
-        // 添加错误规避记录
-        if (errorAvoidance.length > 0 && !hasExistingMemories) {
-          const memorySection = `\n\n## 错误规避记录\n\n> 从 MEMORY.md 学习 (自动注入)\n\n${errorAvoidance.map(m => `- ${m}`).join('\n')}\n`;
-          newContent += memorySection;
-          optimizations.push({
-            category: '错误规避',
-            action: `注入错误规避记录`,
-            details: errorAvoidance,
-            status: 'added'
+          const filteredLines = lines.filter(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return false;
+            // Skip separator-only lines
+            if (/^[\u2500-\u257F\u2010-\u2015\-_=\-*#\.~\s│┌┐└┘├┤┬┴┼]+$/.test(trimmed)) return false;
+            if (/^(.)\1{2,}$/.test(trimmed)) return false;
+            return true;
           });
-        }
-
-        // 添加核心原则 (如果有且技能是工程类)
-        if (corePrinciples.length > 0 &&
-            (newContent.includes('代码') || newContent.includes('开发') || newContent.includes('工程'))) {
-          if (!newContent.includes('## 工程原则')) {
-            const principleSection = `\n\n## 工程原则\n\n> 从 MEMORY.md 学习 (自动注入)\n\n${corePrinciples.map(p => `- ${p}`).join('\n')}\n`;
-            newContent += principleSection;
-            optimizations.push({
-              category: '工程原则',
-              action: `注入工程原则`,
-              details: corePrinciples,
-              status: 'added'
-            });
+          if (filteredLines.length > 0) {
+            process.stdout.write(filteredLines.join('\n') + '\n');
           }
-        }
-      }
-
-      // 6. Daily Memory 分析 (最近会话学习)
-      const dailyMemoryDir = openClawWorkspacePath ? path.join(openClawWorkspacePath, 'memory') : null;
-      if (dailyMemoryDir && fs.existsSync(dailyMemoryDir)) {
-        const memoryFiles = fs.readdirSync(dailyMemoryDir)
-          .filter(f => f.endsWith('.md'))
-          .sort()
-          .reverse()
-          .slice(0, 3);
-
-        const recentActivities: string[] = [];
-        for (const file of memoryFiles) {
-          const filePath = path.join(dailyMemoryDir, file);
-          const content = fs.readFileSync(filePath, 'utf-8');
-
-          // 提取安装/使用记录
-          const installMatches = content.match(/## 安装[^\n]*/g);
-          if (installMatches) {
-            recentActivities.push(...installMatches.map(m => m.replace('## ', '')));
+          thinkingBuffer += text;
+        },
+        onContent: (text) => {
+          thinkingBuffer += text;
+        },
+        onComplete: () => {
+          // Output any remaining buffered content
+          if (lineBuffer.trim()) {
+            process.stdout.write(lineBuffer + '\n');
+            lineBuffer = '';
           }
-
-          // 提取技能使用记录
-          const skillMatches = content.match(/使用[^\n]+技能/g);
-          if (skillMatches) {
-            recentActivities.push(...skillMatches.slice(0, 2));
+          if (thinkingStarted) {
+            console.log('\n✅ Thinking complete!\n');
           }
-        }
+        },
+      });
 
-        if (recentActivities.length > 0) {
-          optimizations.push({
-            category: '会话历史',
-            action: `分析最近 ${memoryFiles.length} 天会话`,
-            details: recentActivities.slice(0, 5),
-            status: 'skipped'
-          });
-        }
-      }
-
-      // 7. Cross-Skill 学习 (从数据库学习其他技能的模式)
-      if (foundInDb || db.getAllSkillNames().length > 0) {
-        const allSkillNames = db.getAllSkillNames();
-        const crossSkillPatterns: string[] = [];
-
-        for (const otherSkill of allSkillNames) {
-          if (otherSkill === skillName) continue;
-
-          const otherRecords = db.getRecords(otherSkill);
-          const latestRecord = otherRecords[otherRecords.length - 1];
-
-          if (latestRecord && latestRecord.patches) {
-            try {
-              const patches = JSON.parse(latestRecord.patches);
-              // 找到成功的优化模式
-              const successfulPatches = patches.filter((p: OptimizationResult) =>
-                p.status === 'applied' || p.status === 'added'
-              );
-
-              if (successfulPatches.length > 0) {
-                crossSkillPatterns.push(`${otherSkill}: ${successfulPatches[0].category}`);
-              }
-            } catch {
-              // Ignore parse errors
-            }
-          }
-        }
-
-        if (crossSkillPatterns.length > 0) {
-          optimizations.push({
-            category: '跨技能学习',
-            action: `发现 ${crossSkillPatterns.length} 个可借鉴模式`,
-            details: crossSkillPatterns.slice(0, 3),
-            status: 'skipped'
-          });
-        }
-      }
-
-      // 8. 环境变量检查 (转为可操作建议)
-      const envVars = newContent.match(/\$\{?[A-Z_]+[A-Z_0-9]*\}?/g);
-      if (envVars && envVars.length > 0) {
-        const uniqueVars = [...new Set(envVars)];
-
-        // 检查是否有环境变量配置说明
-        const hasEnvConfig = newContent.includes('环境变量') || newContent.includes('.env');
-
-        if (!hasEnvConfig && uniqueVars.length > 0) {
-          const envSection = `\n\n## 环境变量配置\n\n> 自动检测到以下环境变量\n\n${uniqueVars.map(v => `- \`${v}\``).join('\n')}\n\n请在使用前确保这些变量已正确设置。\n`;
-          newContent += envSection;
-          optimizations.push({
-            category: '环境变量',
-            action: `添加环境变量配置说明`,
-            details: uniqueVars.slice(0, 5),
-            status: 'added'
-          });
-        } else {
-          optimizations.push({
-            category: '环境变量',
-            action: `检测到 ${uniqueVars.length} 个环境变量`,
-            details: uniqueVars.slice(0, 3),
-            status: 'skipped'
-          });
-        }
-      }
-
-      // 9. 外部依赖分析 (增强版)
-      const urls = newContent.match(/https?:\/\/[^\s\)]+/g);
-      if (urls && urls.length > 0) {
-        const uniqueUrls = [...new Set(urls)];
-        const domains = uniqueUrls.map(u => {
-          try {
-            return new URL(u).hostname;
-          } catch {
-            return u;
-          }
-        });
-        const uniqueDomains = [...new Set(domains)];
-
-        optimizations.push({
-          category: '网络依赖',
-          action: `检测到 ${uniqueDomains.length} 个外部服务`,
-          details: uniqueDomains.slice(0, 5),
-          status: 'skipped'
-        });
-      }
-
-      // 10. 智能版本建议
-    const changeTypes = {
-      breaking: optimizations.filter(o => o.action.includes('移除') || o.action.includes('删除')).length,
-      features: optimizations.filter(o => o.status === 'added' && !['风格注入', '环境变量'].includes(o.category)).length,
-      fixes: optimizations.filter(o => o.status === 'applied').length
-    };
-
-    if (changeTypes.breaking > 0 || changeTypes.features > 0 || changeTypes.fixes > 0) {
-      const versionSuggestion = changeTypes.breaking > 0 ? 'MAJOR' :
-                                changeTypes.features > 0 ? 'MINOR' :
-                                changeTypes.fixes > 0 ? 'PATCH' : null;
-
-      if (versionSuggestion) {
-        optimizations.push({
-          category: '版本建议',
-          action: `建议版本更新类型: ${versionSuggestion}`,
-          details: [`Breaking: ${changeTypes.breaking}`, `Features: ${changeTypes.features}`, `Fixes: ${changeTypes.fixes}`],
-          status: 'skipped'
-        });
-      }
-    }
-
-    // 完成优化
-    const appliedCount = optimizations.filter(o => o.status === 'applied' || o.status === 'added').length;
-    const skippedCount = optimizations.filter(o => o.status === 'skipped').length;
-
-    optimizeSpinner.succeed(`优化完成: ${appliedCount} 个已应用, ${skippedCount} 个需关注`);
-
-    // 显示优化详情
-    if (!isSimple && optimizations.length > 0) {
-      console.log('\n📝 改动详情:');
-      for (const opt of optimizations) {
-        if (opt.status === 'applied' || opt.status === 'added') {
-          const statusIcon = opt.status === 'applied' ? '✅' : '➕';
-          console.log(`   ${statusIcon} ${opt.category}: ${opt.action}`);
-          if (opt.details && opt.details.length > 0) {
-            for (const detail of opt.details.slice(0, 3)) {
-              console.log(`      → ${detail}`);
-            }
-          }
-        }
-      }
-    }
-
-    // ═══════════════════════════════════════════
-    // STEP 5: Save Changes (or preview with --dry-run)
-    // ═══════════════════════════════════════════
-    const currentVersion = foundInDb ? db.getLatestVersion(skillName) : '1.0.0';
-
-    // Intelligent versioning
-    const intelligentVersion = (current: string, opts: OptimizationResult[]): string => {
-      const [major, minor, patch] = current.split('.').map(Number);
-
-      const hasBreaking = opts.some(o => o.action.includes('移除') || o.action.includes('删除'));
-      const hasNewFeatures = opts.filter(o =>
-        o.status === 'added' && !['风格注入', '环境变量', '版本建议'].includes(o.category)
-      ).length > 0;
-      const hasFixes = opts.filter(o => o.status === 'applied').length > 0;
-
-      if (hasBreaking) return `${major + 1}.0.0`;
-      if (hasNewFeatures) return `${major}.${minor + 1}.0`;
-      if (hasFixes) return `${major}.${minor}.${patch + 1}`;
-      return `${major}.${minor}.${patch + 1}`;
-    };
-
-    const newVersion = appliedCount > 0 ? intelligentVersion(currentVersion || '1.0.0', optimizations) : currentVersion || '1.0.0';
-
-    // --dry-run 模式：仅预览，不应用
-    if (options.dryRun) {
-      console.log('\n📋 预览改动 (--dry-run):');
-      console.log('─'.repeat(50));
-      if (appliedCount > 0) {
-        for (const opt of optimizations.filter(o => o.status === 'applied' || o.status === 'added')) {
-          console.log(`   + ${opt.category}: ${opt.action}`);
-        }
-        console.log(`\n   版本: ${currentVersion} → ${newVersion}`);
-        console.log('\n   💡 移除 --dry-run 以应用这些改动');
+      // Debug: Check if AI generated recommendations
+      if (aiRecommendations.length === 0) {
+        console.log('⚠️ AI generated 0 recommendations. Check if model output JSON correctly.\n');
       } else {
-        console.log('   无改动需要应用');
+        console.log(`✅ Generated ${aiRecommendations.length} recommendation(s)\n`);
       }
-      return;
+
+    } catch (aiError) {
+      if (thinkingSpinner.isSpinning) {
+        thinkingSpinner.fail('AI generation failed');
+      } else {
+        console.log('\n❌ AI generation failed');
+      }
+      console.log('Falling back to rule-based recommendations...');
+      evolutionRecommendations = evolutionEngine.generateRecommendations(evolutionContext);
     }
 
-    // 保存更改
-    if (appliedCount > 0 && skillDir) {
-      const saveSpinner = ora('保存更改...').start();
+    // ═══════════════════════════════════════════
+    // STEP 6: Display Recommendations
+    // ═══════════════════════════════════════════
+    const allRecommendations = aiRecommendations.length > 0 ? aiRecommendations :
+                               evolutionRecommendations.length > 0 ? evolutionRecommendations : [];
 
-      // 确定技能文件路径
-      const skillMdPath = path.join(skillDir, 'SKILL.md');
-      const skillMdAltPath = path.join(skillDir, 'skill.md');
-      const actualSkillPath = fs.existsSync(skillMdPath) ? skillMdPath : skillMdAltPath;
+    if (allRecommendations.length > 0) {
+      console.log('═'.repeat(60));
+      console.log('📋 EVOLUTION RECOMMENDATIONS');
+      console.log('═'.repeat(60) + '\n');
 
-      if (fs.existsSync(actualSkillPath)) {
-        // 创建备份
-        const backupPath = actualSkillPath + '.backup';
-        fs.copyFileSync(actualSkillPath, backupPath);
+      for (let i = 0; i < allRecommendations.length; i++) {
+        const rec = allRecommendations[i];
+        const priority = 'priority' in rec ? rec.priority : 'medium';
+        const confidence = 'confidence' in rec ? rec.confidence : 0.7;
+        const title = rec.title;
+        const description = rec.description;
+        const type = rec.type;
+        const suggestedContent = 'suggestedContent' in rec ? rec.suggestedContent : undefined;
 
-        // 写入新内容
-        fs.writeFileSync(actualSkillPath, newContent, 'utf-8');
+        const priorityEmoji = priority === 'high' ? '🔴' : priority === 'medium' ? '🟡' : '🟢';
 
-        saveSpinner.succeed(`已保存: ${currentVersion} → ${newVersion}`);
-        if (!isSimple) {
-          console.log(`   备份: ${path.basename(backupPath)}`);
+        console.log(`\n${priorityEmoji} [${priority.toUpperCase()}] Recommendation #${i + 1}`);
+        console.log('─'.repeat(50));
+        console.log(`   Title: ${title}`);
+        console.log(`   Type: ${type}`);
+        console.log(`   Confidence: ${(confidence * 100).toFixed(0)}%`);
+        console.log(`\n   Description:`);
+        console.log(`   ${description.split('\n').join('\n   ')}`);
+
+        if (suggestedContent) {
+          console.log(`\n   Suggested Content:`);
+          const lines = suggestedContent.split('\n').slice(0, 8);
+          lines.forEach(line => console.log(`   │ ${line}`));
+          if (suggestedContent.split('\n').length > 8) {
+            console.log('   │ ... (truncated)');
+          }
         }
       }
     }
 
     // ═══════════════════════════════════════════
-    // STEP 6: Record Evolution
+    // STEP 7: Next Tips
     // ═══════════════════════════════════════════
-    const skillMdPath = skillDir ? path.join(skillDir, 'SKILL.md') : undefined;
-    const skillMdAltPath = skillDir ? path.join(skillDir, 'skill.md') : undefined;
-    const actualSkillPath = skillMdPath && fs.existsSync(skillMdPath) ? skillMdPath :
-                            skillMdAltPath && fs.existsSync(skillMdAltPath) ? skillMdAltPath : undefined;
+    console.log('\n' + '═'.repeat(60));
+    console.log('📌 Next Steps');
+    console.log('═'.repeat(60) + '\n');
 
-    const newRecord: EvolutionRecord = {
-      id: EvolutionDatabase.generateId(),
-      skillName: skillName,
-      version: newVersion,
-      timestamp: new Date(),
-      telemetryData: JSON.stringify({
-        workspaceAnalysis: workspaceConfig.techStack,
-        optimizationsCount: optimizations.length,
-        appliedCount,
-        skippedCount,
-        soulLoaded: !!soulContent,
-        memoryLoaded: !!memoryContent
-      }),
-      patches: JSON.stringify(optimizations),
-      importSource: skillSource,
-      skillPath: skillDir
-    };
+    if (allRecommendations.length > 0) {
+      console.log('   sa evolve <skill> --apply    # Apply recommendations to skill');
+    }
+    console.log('   sa log <skill>               # View evolution history');
+    console.log('   sa summary <skill>           # View evolution metrics');
+    console.log('   sa export <skill>            # Export skill as ZIP');
+    console.log('');
 
-    db.addRecord(newRecord);
+    // ═══════════════════════════════════════════
+    // STEP 8: Apply Optimizations (if --apply flag)
+    // ═══════════════════════════════════════════
+    let newContent = skillContent;
 
-    // 简洁输出摘要
-    console.log(`\n✅ ${skillName} 已进化 (${currentVersion} → ${newVersion})`);
-    if (isSimple) {
-      const changes = optimizations
-        .filter(o => o.status === 'applied' || o.status === 'added')
-        .map(o => o.category)
-        .slice(0, 3)
-        .join(' + ');
-      if (changes) {
-        console.log(`📝 改动: ${changes}`);
+    if (options.apply && allRecommendations.length > 0) {
+      const applySpinner = ora('Applying recommendations...').start();
+
+      for (const rec of allRecommendations) {
+        const confidence = 'confidence' in rec ? rec.confidence : 0.7;
+        const suggestedContent = 'suggestedContent' in rec ? rec.suggestedContent : undefined;
+        const title = rec.title;
+
+        // Apply high-confidence recommendations
+        if (confidence >= 0.8 && suggestedContent) {
+          const sectionTitle = `## ${title}`;
+          if (!newContent.includes(sectionTitle)) {
+            newContent += `\n\n${sectionTitle}\n\n${suggestedContent}\n`;
+          }
+        }
       }
-      console.log(`💡 下次使用时自动应用这些优化`);
-    } else {
-      console.log(`📊 统计: ${appliedCount} 个已应用, ${skippedCount} 个需关注`);
-      if (needsImport) {
-        console.log(`📌 状态: 已添加到进化追踪`);
-      }
-      console.log('\n📌 下一步操作:');
-      if (appliedCount > 0) {
-        console.log(`   git diff ${skillDir}/SKILL.md    # 查看具体修改`);
-      }
-      console.log(`   sa info ${skillName}              # 查看技能详情`);
-      console.log(`   sa log ${skillName}               # 查看版本历史`);
+
+      // Write updated content
+      const skillFilePath = path.join(skillDir, 'SKILL.md');
+      fs.writeFileSync(skillFilePath, newContent, 'utf-8');
+
+      applySpinner.succeed(`Applied ${allRecommendations.filter(r => ('confidence' in r ? r.confidence : 0.7) >= 0.8).length} recommendations`);
+
+      // Record evolution
+      const newRecord: EvolutionRecord = {
+        id: EvolutionDatabase.generateId(),
+        skillName: skillName,
+        version: '1.1.0',
+        timestamp: new Date(),
+        telemetryData: JSON.stringify({
+          recommendationsCount: allRecommendations.length,
+          appliedCount: allRecommendations.filter(r => ('confidence' in r ? r.confidence : 0.7) >= 0.8).length,
+        }),
+        patches: JSON.stringify(allRecommendations.map(r => ({
+          category: r.type,
+          title: r.title,
+          description: r.description,
+        }))),
+        importSource: skillSource,
+        skillPath: skillDir
+      };
+      db.addRecord(newRecord);
+
+      console.log(`\n✅ ${skillName} evolved (1.0.0 → 1.1.0)`);
     }
 
-    if (options.detail || outputLevel === 'debug') {
-      console.log('\n📊 详细配置:');
-      console.log('─'.repeat(50));
-      console.log(JSON.stringify(workspaceConfig, null, 2));
-    }
+    console.log('\n🎉 Evolution analysis complete!\n');
   });
 
 // ============================================
@@ -1841,9 +1579,9 @@ program
         const version = db.getLatestVersion(name);
         console.log(`  • ${name} (v${version})`);
       }
-      console.log('\n📌 下一步操作:');
-      console.log('   sa share <skill-name>      # 分享具体技能');
-      console.log('   sa export <skill-name>     # 导出技能到文件');
+      console.log('\n📌 Next Steps:');
+      console.log('   sa share <skill-name>      # Share a specific skill');
+      console.log('   sa export <skill-name>     # Export skill to file');
       return;
     }
 
@@ -2019,7 +1757,7 @@ program
             if (records.length > 0) {
               skills = [skillName];
             } else {
-              console.log(`  ⚠ 技能 "${skillName}" 未在已导入列表中找到`);
+              console.log(`  ⚠ Skill "${skillName}" not found in imported list`);
             }
           } else {
             const allRecords = db.getAllRecords();
@@ -2027,7 +1765,7 @@ program
           }
 
           if (skills.length === 0) {
-            console.log('  ⚠ 没有已导入的技能');
+            console.log('  ⚠ No imported skills');
             continue;
           }
 
@@ -2209,21 +1947,21 @@ program
 
     // Show results
     if (totalExported === 0) {
-      console.log(`\n❌ 导出失败: 没有找到可导出的技能`);
-      console.log('\n📌 建议:');
-      console.log('   sa info              # 查看已导入的技能');
-      console.log('   sa import <skill>    # 先导入技能再导出');
+      console.log(`\n❌ Export failed: No skills found to export`);
+      console.log('\n📌 Suggestions:');
+      console.log('   sa info              # View imported skills');
+      console.log('   sa import <skill>    # Import a skill first');
     } else {
-      console.log(`\n✅ 成功导出 ${totalExported} 个技能`);
-      console.log(`\n📁 导出目录: ${absoluteOutput}`);
+      console.log(`\n✅ Successfully exported ${totalExported} skill(s)`);
+      console.log(`\n📁 Output directory: ${absoluteOutput}`);
       if (exportedFiles.length > 0) {
-        console.log('\n📄 导出的文件:');
+        console.log('\n📄 Exported files:');
         for (const file of exportedFiles) {
           console.log(`   ${file}`);
         }
       }
-      console.log('\n📌 下一步操作:');
-      console.log('   # 在文件管理器中打开导出目录');
+      console.log('\n📌 Next Steps:');
+      console.log('   # Open export directory in file manager');
       console.log(`   explorer ${absoluteOutput}`);
     }
   });
@@ -2415,7 +2153,7 @@ program
                                    patch.status === 'added' ? '➕' :
                                    patch.status === 'skipped' ? 'ℹ️' : '•';
                 console.log(`   ${statusIcon} [${type}] ${desc}`);
-                // 显示具体内容
+                // Show details
                 if (patch.details && patch.details.length > 0) {
                   for (const detail of patch.details) {
                     console.log(`      → ${detail}`);
@@ -2470,6 +2208,9 @@ program
 
       console.log(`Total ${records.length} version(s)`);
 
+      console.log('\n📌 Next Steps:');
+      console.log(`   sa summary ${skillName}      # View evolution metrics`);
+
     } else {
       // Show history for all skills
       const records = db.getAllRecords();
@@ -2493,10 +2234,169 @@ program
         console.log('');
       }
 
-      console.log('📌 下一步操作:');
-      console.log('   sa log <skill-name>        # 查看具体技能历史');
-      console.log('   sa evolve <skill-name>     # 分析并优化技能');
+      console.log('\n📌 Next Steps:');
+      console.log('   sa summary <skill-name>    # View evolution metrics');
+      console.log('   sa log <skill-name>        # View specific skill history');
+      console.log('   sa evolve <skill-name>     # Analyze and optimize skill');
     }
+  });
+
+// ============================================
+// sa summary <skill> - View evolution metrics
+// ============================================
+program
+  .command('summary <skillName>')
+  .description('View evolution metrics comparison')
+  .action((skillName: string) => {
+    const db = new EvolutionDatabase();
+    const records = db.getRecords(skillName);
+
+    if (records.length === 0) {
+      console.log(`❌ No evolution records found for "${skillName}"\n`);
+      console.log('📌 Next Steps:');
+      console.log(`   sa evolve ${skillName}    # Run evolution analysis first`);
+      return;
+    }
+
+    // Sort by timestamp ascending (oldest first)
+    const sorted = [...records].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    const baseline = sorted[0];
+    const latest = sorted[sorted.length - 1];
+
+    console.log(`📊 Evolution Summary: ${skillName}\n`);
+
+    // Extract metrics from telemetry data
+    const extractTelemetryMetrics = (record: EvolutionRecord) => {
+      try {
+        const t = JSON.parse(record.telemetryData || '{}');
+        return {
+          optimizations: t.optimizationsCount || 0,
+          applied: t.appliedCount || 0,
+          skipped: t.skippedCount || 0,
+          soulLoaded: t.soulLoaded || false,
+          memoryLoaded: t.memoryLoaded || false,
+          languages: t.workspaceAnalysis?.languages || [],
+          packageManager: t.workspaceAnalysis?.packageManager || '-'
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    // Extract applied changes from patches
+    const extractAppliedChanges = (record: EvolutionRecord) => {
+      try {
+        const patches = JSON.parse(record.patches || '[]');
+        const changes: { style: string[]; errors: string[]; env: string[]; learning: string[] } = {
+          style: [], errors: [], env: [], learning: []
+        };
+        for (const p of patches) {
+          const cat = p.category || p.type || '';
+          const details = p.details || [];
+          if (cat.includes('Style') || cat.includes('风格')) {
+            changes.style.push(...details);
+          } else if (cat.includes('Error') || cat.includes('错误')) {
+            changes.errors.push(...details);
+          } else if (cat.includes('Environment') || cat.includes('环境')) {
+            changes.env.push(...details);
+          }
+        }
+        return changes;
+      } catch {
+        return { style: [], errors: [], env: [], learning: [] };
+      }
+    };
+
+    const baseMetrics = extractTelemetryMetrics(baseline);
+    const latestMetrics = extractTelemetryMetrics(latest);
+
+    // Aggregate all changes across all records
+    const allChanges = { style: [] as string[], errors: [] as string[], env: [] as string[] };
+    for (const rec of sorted) {
+      const changes = extractAppliedChanges(rec);
+      allChanges.style.push(...changes.style);
+      allChanges.errors.push(...changes.errors);
+      allChanges.env.push(...changes.env);
+    }
+    // Deduplicate
+    allChanges.style = [...new Set(allChanges.style)];
+    allChanges.errors = [...new Set(allChanges.errors)];
+    allChanges.env = [...new Set(allChanges.env)];
+
+    // Show metrics comparison table
+    const vBase = baseline.version.padEnd(5);
+    const vLatest = latest.version.padEnd(5);
+    console.log('┌─────────────────────┬─────────────────┬─────────────────┬──────────┬──────────────────┐');
+    console.log(`│ Metric              │ Baseline (v${vBase})│ Evolved (v${vLatest})│ Change   │ Status           │`);
+    console.log('├─────────────────────┼─────────────────┼─────────────────┼──────────┼──────────────────┤');
+
+    // Helper to format row
+    const formatRow = (name: string, base: number, evolved: number, statusFn: (delta: number) => string) => {
+      const delta = base === 0 ? (evolved > 0 ? 100 : 0) : ((evolved - base) / base) * 100;
+      const deltaStr = delta === 0 ? '-' : (delta > 0 ? `+${delta.toFixed(0)}%` : `${delta.toFixed(0)}%`);
+      const status = statusFn(delta);
+      const namePad = name.padEnd(19);
+      const baseStr = String(base).padStart(15);
+      const evolvedStr = String(evolved).padStart(15);
+      const deltaPad = deltaStr.padStart(8);
+      const statusPad = status.padEnd(16);
+      console.log(`│ ${namePad} │ ${baseStr} │ ${evolvedStr} │ ${deltaPad} │ ${statusPad} │`);
+    };
+
+    // Status helpers
+    const goodStatus = (delta: number) => delta < -10 ? '✅ Optimized' : delta > 10 ? '⚠️ Increased' : '➖ Stable';
+    const countStatus = (delta: number) => delta > 0 ? '✅ Enhanced' : delta < 0 ? '⚠️ Reduced' : '➖ Stable';
+
+    // Show metrics rows
+    formatRow('Optimizations', baseMetrics?.optimizations || 0, latestMetrics?.optimizations || 0, countStatus);
+    formatRow('Applied Patches', baseMetrics?.applied || 0, latestMetrics?.applied || 0, countStatus);
+    formatRow('Style Rules', 0, allChanges.style.length, countStatus);
+    formatRow('Error Avoidances', 0, allChanges.errors.length, countStatus);
+    formatRow('Env Adaptations', 0, allChanges.env.length, countStatus);
+
+    console.log('└─────────────────────┴─────────────────┴─────────────────┴──────────┴──────────────────┘');
+
+    // Workspace context
+    if (latestMetrics?.languages?.length) {
+      console.log(`\n📁 Workspace: ${latestMetrics.languages.join(', ')} | ${latestMetrics.packageManager}`);
+    }
+
+    // Context loaded
+    const ctxLoaded = [];
+    if (latestMetrics?.soulLoaded) ctxLoaded.push('SOUL.md');
+    if (latestMetrics?.memoryLoaded) ctxLoaded.push('MEMORY.md');
+    if (ctxLoaded.length > 0) {
+      console.log(`📚 Context: ${ctxLoaded.join(', ')}`);
+    }
+
+    // Generate conclusion
+    const totalApplied = allChanges.style.length + allChanges.errors.length + allChanges.env.length;
+    const totalSkipped = (latestMetrics?.skipped || 0);
+
+    console.log('\n📝 Conclusion:');
+    if (totalApplied > 0) {
+      const parts: string[] = [];
+      if (allChanges.style.length > 0) parts.push(`${allChanges.style.length} style rules`);
+      if (allChanges.errors.length > 0) parts.push(`${allChanges.errors.length} error avoidances`);
+      if (allChanges.env.length > 0) parts.push(`${allChanges.env.length} environment adaptations`);
+
+      console.log(`   ✅ Evolution applied: ${parts.join(', ')}.`);
+      if (totalSkipped > 0) {
+        console.log(`   ℹ️  ${totalSkipped} optimization(s) skipped (cross-skill learning available).`);
+      }
+      console.log(`   📈 Version progressed from v${baseline.version} to v${latest.version} across ${records.length} evolution(s).`);
+    } else {
+      console.log('   ➖ No significant changes applied in recent evolutions.');
+      console.log('   💡 Run `sa evolve` to analyze and apply new optimizations.');
+    }
+
+    console.log('\n📌 Next Steps:');
+    console.log(`   sa log ${skillName}          # View detailed changes`);
+    console.log(`   sa share ${skillName}        # Export/publish skill`);
+    console.log(`   sa export ${skillName}       # Export to file`);
   });
 
 // ============================================
@@ -2515,7 +2415,7 @@ program
 
     // No argument - show all scannable skills
     if (!skillOrFile) {
-      console.log('🔒 安全扫描\n');
+      console.log('🔒 Security Scan\n');
 
       // Get imported skills
       const records = db.getAllRecords();
@@ -2564,15 +2464,15 @@ program
 
       if (importedSkills.length === 0 && openClawSkills.length === 0 &&
           claudeCodeCommands.length === 0 && claudeCodeSkills.length === 0) {
-        console.log('没有找到可扫描的技能。\n');
-        console.log('📌 下一步操作:');
-        console.log('   sa import <skill>        # 先导入技能');
+        console.log('No skills found to scan.\n');
+        console.log('📌 Next Steps:');
+        console.log('   sa import <skill>        # Import a skill first');
         return;
       }
 
       // Show imported skills
       if (importedSkills.length > 0) {
-        console.log('── 已导入的技能 ──');
+        console.log('── Imported Skills ──');
         for (const skill of importedSkills) {
           const skillRecords = db.getRecords(skill);
           const latest = skillRecords[skillRecords.length - 1];
@@ -2583,11 +2483,11 @@ program
 
       // Show OpenClaw skills
       if (openClawSkills.length > 0 && openClawPath) {
-        console.log('── OpenClaw 本地技能 ──');
+        console.log('── OpenClaw Local Skills ──');
         for (const skill of openClawSkills) {
           const skillMdPath = path.join(openClawPath, skill, 'SKILL.md');
           const hasPrompt = fs.existsSync(skillMdPath);
-          console.log(`  📦 ${skill} ${hasPrompt ? '' : '(无 SKILL.md)'}`);
+          console.log(`  📦 ${skill} ${hasPrompt ? '' : '(no SKILL.md)'}`);
         }
         console.log('');
       }
@@ -2610,10 +2510,10 @@ program
         console.log('');
       }
 
-      console.log('📌 下一步操作:');
-      console.log('   sa scan <skill-name>     # 扫描已导入的技能');
-      console.log('   sa scan <file-path>      # 扫描本地文件');
-      console.log('\n示例:');
+      console.log('📌 Next Steps:');
+      console.log('   sa scan <skill-name>     # Scan imported skill');
+      console.log('   sa scan <file-path>      # Scan local file');
+      console.log('\nExamples:');
       console.log('   sa scan frontend-design');
       console.log('   sa scan ./my-skill/SKILL.md');
       console.log('   sa scan skill.json -f json');
@@ -2627,23 +2527,23 @@ program
 
     if (isFilePath) {
       // Scan file
-      console.log(`🔒 扫描文件: ${skillOrFile}\n`);
+      console.log(`🔒 Scanning file: ${skillOrFile}\n`);
 
       try {
         const result = securityEvaluator.scanFile(skillOrFile);
         const report = securityEvaluator.generateReport(result, options.format as 'text' | 'json' | 'markdown');
         console.log(report);
 
-        console.log('\n📌 下一步操作:');
-        console.log('   sa import ' + skillOrFile + '    # 导入这个技能');
+        console.log('\n📌 Next Steps:');
+        console.log('   sa import ' + skillOrFile + '    # Import this skill');
       } catch (error) {
-        console.error(`❌ 错误: ${error}`);
-        console.log('\n📌 建议:');
-        console.log('   sa scan                   # 查看可扫描的技能');
+        console.error(`❌ Error: ${error}`);
+        console.log('\n📌 Suggestions:');
+        console.log('   sa scan                   # View scannable skills');
       }
     } else {
       // Scan by skill name
-      console.log(`🔒 扫描技能: ${skillOrFile}\n`);
+      console.log(`🔒 Scanning skill: ${skillOrFile}\n`);
 
       // Try to find skill content
       let skillContent = '';
@@ -2678,7 +2578,7 @@ program
           const skillMdPath = path.join(skillPath, 'SKILL.md');
           if (fs.existsSync(skillMdPath)) {
             skillContent = fs.readFileSync(skillMdPath, 'utf-8');
-            skillSource = 'OpenClaw (本地)';
+            skillSource = 'OpenClaw (local)';
           }
         }
       }
@@ -2712,7 +2612,7 @@ program
 
       // If still no content, try to fetch from remote
       if (!skillContent) {
-        console.log('   正在从远程平台获取技能内容...\n');
+        console.log('   Fetching skill content from remote...\n');
         try {
           const searchResults = await platformFetcher.search(skillOrFile, { limit: 1 });
           if (searchResults.length > 0) {
@@ -2729,22 +2629,22 @@ program
         // Show available info even if content not found
         if (records.length > 0) {
           const latest = records[records.length - 1];
-          console.log(`❌ 无法获取技能内容进行扫描`);
-          console.log(`\n   技能: ${skillOrFile}`);
-          console.log(`   版本: ${latest.version}`);
-          console.log(`   来源: ${latest.importSource || 'unknown'}`);
-          console.log(`\n   💡 提示: 远程技能需要通过官方 CLI 安装后才能扫描。`);
-          console.log(`\n📌 下一步操作:`);
-          console.log(`   sa scan                   # 查看可扫描的本地技能`);
+          console.log(`❌ Could not fetch skill content for scanning`);
+          console.log(`\n   Skill: ${skillOrFile}`);
+          console.log(`   Version: ${latest.version}`);
+          console.log(`   Source: ${latest.importSource || 'unknown'}`);
+          console.log(`\n   💡 Tip: Remote skills need to be installed via official CLI first.`);
+          console.log(`\n📌 Next Steps:`);
+          console.log(`   sa scan                   # View local scannable skills`);
           if (latest.importSource?.includes('skills.sh')) {
-            console.log(`   npx skills add <owner/repo> --skill <name>  # 使用官方 CLI 安装`);
+            console.log(`   npx skills add <owner/repo> --skill <name>  # Install via official CLI`);
           }
-          console.log(`   # 或者扫描本地 OpenClaw 技能`);
+          console.log(`   # Or scan local OpenClaw skills`);
         } else {
-          console.log(`❌ 未找到技能: ${skillOrFile}`);
-          console.log('\n📌 下一步操作:');
-          console.log('   sa scan                   # 查看可扫描的技能');
-          console.log('   sa import ' + skillOrFile + ' --no-npx   # 先导入技能');
+          console.log(`❌ Skill not found: ${skillOrFile}`);
+          console.log('\n📌 Next Steps:');
+          console.log('   sa scan                   # View scannable skills');
+          console.log('   sa import ' + skillOrFile + ' --no-npx   # Import skill first');
         }
         return;
       }
@@ -2755,18 +2655,18 @@ program
       console.log(report);
 
       if (skillPath) {
-        console.log(`\n📁 技能路径: ${skillPath}`);
+        console.log(`\n📁 Skill path: ${skillPath}`);
       }
       if (skillSource) {
-        console.log(`📥 来源: ${skillSource}`);
+        console.log(`📥 Source: ${skillSource}`);
       }
 
-      console.log('\n📌 下一步操作:');
+      console.log('\n📌 Next Steps:');
       if (result.passed) {
-        console.log('   sa info ' + skillOrFile + '      # 查看技能详情');
-        console.log('   sa evolve ' + skillOrFile + '    # 分析并优化');
+        console.log('   sa info ' + skillOrFile + '      # View skill details');
+        console.log('   sa evolve ' + skillOrFile + '    # Analyze and optimize');
       } else {
-        console.log('   # 请检查安全问题后再使用');
+        console.log('   # Review security issues before use');
       }
     }
   });
@@ -2793,7 +2693,7 @@ program
       if (recent.length > 0) {
         recent.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
       } else {
-        console.log('  (无最近使用的技能)');
+        console.log('  (No recent skills)');
       }
       console.log('');
       console.log(`📁 Config file: ~/.skill-adapter/config.json`);
@@ -2804,8 +2704,8 @@ program
     if (action === 'get' && key) {
       const validKeys: (keyof UserPreferences)[] = ['autoEvolve', 'outputLevel', 'backupEnabled'];
       if (!validKeys.includes(key as keyof UserPreferences)) {
-        console.log(`❌ 未知配置项: ${key}`);
-        console.log(`   有效选项: ${validKeys.join(', ')}`);
+        console.log(`❌ Unknown config: ${key}`);
+        console.log(`   Valid options: ${validKeys.join(', ')}`);
         return;
       }
       const val = configManager.get(key as keyof UserPreferences);
@@ -2817,8 +2717,8 @@ program
       const validKeys: (keyof UserPreferences)[] = ['autoEvolve', 'outputLevel', 'backupEnabled'];
 
       if (!validKeys.includes(key as keyof UserPreferences)) {
-        console.log(`❌ 未知配置项: ${key}`);
-        console.log(`   有效选项: ${validKeys.join(', ')}`);
+        console.log(`❌ Unknown config: ${key}`);
+        console.log(`   Valid options: ${validKeys.join(', ')}`);
         return;
       }
 
@@ -2826,19 +2726,19 @@ program
       if (key === 'autoEvolve') {
         const validValues = ['always', 'ask', 'preview'];
         if (!validValues.includes(value)) {
-          console.log(`❌ autoEvolve 有效值: ${validValues.join(', ')}`);
+          console.log(`❌ autoEvolve valid values: ${validValues.join(', ')}`);
           return;
         }
       } else if (key === 'outputLevel') {
         const validValues = ['simple', 'verbose', 'debug'];
         if (!validValues.includes(value)) {
-          console.log(`❌ outputLevel 有效值: ${validValues.join(', ')}`);
+          console.log(`❌ outputLevel valid values: ${validValues.join(', ')}`);
           return;
         }
       } else if (key === 'backupEnabled') {
         const validValues = ['true', 'false'];
         if (!validValues.includes(value)) {
-          console.log(`❌ backupEnabled 有效值: true, false`);
+          console.log(`❌ backupEnabled valid values: true, false`);
           return;
         }
         value = value === 'true' ? 'true' : 'false';
@@ -2853,15 +2753,15 @@ program
         configManager.set('backupEnabled', value === 'true');
       }
 
-      console.log(`✅ 已设置 ${key} = ${value}`);
+      console.log(`✅ Set ${key} = ${value}`);
       return;
     }
 
     if (action === 'reset') {
       configManager.reset();
-      console.log('✅ 配置已重置为默认值');
+      console.log('✅ Configuration reset to defaults');
       console.log('');
-      console.log('默认配置:');
+      console.log('Default config:');
       console.log(`  autoEvolve    = ask`);
       console.log(`  outputLevel   = simple`);
       console.log(`  backupEnabled = true`);
@@ -2869,17 +2769,17 @@ program
     }
 
     // Show help
-    console.log('\n📋 sa config 命令用法:\n');
-    console.log('  sa config                查看所有配置');
-    console.log('  sa config list           查看所有配置');
-    console.log('  sa config get <key>      查看单个配置');
-    console.log('  sa config set <key> <value>  设置配置');
-    console.log('  sa config reset          重置为默认值');
+    console.log('\n📋 sa config usage:\n');
+    console.log('  sa config                View all config');
+    console.log('  sa config list           View all config');
+    console.log('  sa config get <key>      Get single config');
+    console.log('  sa config set <key> <value>  Set config');
+    console.log('  sa config reset          Reset to defaults');
     console.log('');
-    console.log('配置项:');
-    console.log('  autoEvolve    always | ask | preview  自动进化策略');
-    console.log('  outputLevel   simple | verbose | debug  输出详细程度');
-    console.log('  backupEnabled true | false  是否自动备份');
+    console.log('Options:');
+    console.log('  autoEvolve    always | ask | preview  Auto-evolution strategy');
+    console.log('  outputLevel   simple | verbose | debug  Output verbosity');
+    console.log('  backupEnabled true | false  Auto backup');
     console.log('');
   });
 
@@ -2892,7 +2792,7 @@ program
   .option('-p, --platform <platform>', 'Platform to show (imported, openclaw, claudecode, all)', 'all')
   .action((options: { platform: string }) => {
     // Delegate to info command logic
-    console.log('\n📋 技能列表\n');
+    console.log('\n📋 Skill List\n');
 
     const db = new EvolutionDatabase();
     const allSkillNames = db.getAllSkillNames();
@@ -2940,7 +2840,7 @@ program
 
     // Display results
     if (allSkillNames.length > 0) {
-      console.log('📦 已导入技能 (Database):');
+      console.log('📦 Imported Skills (Database):');
       for (const name of allSkillNames) {
         console.log(`   • ${name}`);
       }
@@ -2948,7 +2848,7 @@ program
     }
 
     if (openclawSkills.length > 0 && (options.platform === 'all' || options.platform === 'openclaw')) {
-      console.log('🔧 OpenClaw 技能:');
+      console.log('🔧 OpenClaw Skills:');
       for (const skill of openclawSkills) {
         console.log(`   • ${skill.name}`);
       }
@@ -2956,7 +2856,7 @@ program
     }
 
     if (claudeCodeSkills.length > 0 && (options.platform === 'all' || options.platform === 'claudecode')) {
-      console.log('🤖 Claude Code 技能:');
+      console.log('🤖 Claude Code Skills:');
       for (const skill of claudeCodeSkills) {
         console.log(`   • ${skill.name}`);
       }
@@ -2965,14 +2865,14 @@ program
 
     const total = allSkillNames.length + openclawSkills.length + claudeCodeSkills.length;
     if (total === 0) {
-      console.log('暂无技能。运行 `sa import` 发现技能。');
+      console.log('No skills found. Run `sa import` to discover skills.');
     } else {
-      console.log(`共 ${total} 个技能`);
+      console.log(`Total: ${total} skill(s)`);
     }
 
-    console.log('\n📌 下一步操作:');
-    console.log('   sa show <skill>    # 查看技能详情');
-    console.log('   sa evolve <skill>  # 进化分析');
+    console.log('\n📌 Next Steps:');
+    console.log('   sa show <skill>    # View skill details');
+    console.log('   sa evolve <skill>  # Run evolution analysis');
   });
 
 // Parse arguments

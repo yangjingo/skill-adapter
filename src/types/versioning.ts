@@ -8,13 +8,13 @@
  * Evolution type for version changes
  */
 export type EvolutionType =
-  | 'cost-reduction'      // 成本降低 (token/调用减少)
-  | 'accuracy-improvement' // 准确性提升
-  | 'feature-addition'    // 功能增加
-  | 'security-fix'        // 安全修复
-  | 'performance-boost'   // 性能提升
-  | 'user-experience'     // 用户体验改进
-  | 'breaking-change';    // 破坏性变更
+  | 'cost-reduction'      // Cost reduction (token/call decrease)
+  | 'accuracy-improvement' // Accuracy improvement
+  | 'feature-addition'    // New features added
+  | 'security-fix'        // Security fixes
+  | 'performance-boost'   // Performance improvements
+  | 'user-experience'     // User experience improvements
+  | 'breaking-change';    // Breaking changes
 
 /**
  * Version bump rule based on evolution type
@@ -42,12 +42,12 @@ export interface VersionTag {
  * Metrics that trigger version changes
  */
 export interface VersionMetrics {
-  tokenReduction?: number;    // Token 减少百分比
-  callReduction?: number;     // 调用减少百分比
-  accuracyImprovement?: number; // 准确性提升百分比
-  newFeatures?: string[];     // 新增功能
-  securityIssues?: number;    // 修复的安全问题数
-  breakingChanges?: string[]; // 破坏性变更列表
+  tokenReduction?: number;    // Token reduction percentage
+  callReduction?: number;     // Call reduction percentage
+  accuracyImprovement?: number; // Accuracy improvement percentage
+  newFeatures?: string[];     // New features added
+  securityIssues?: number;    // Number of security issues fixed
+  breakingChanges?: string[]; // List of breaking changes
 }
 
 /**

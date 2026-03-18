@@ -34,7 +34,18 @@ export * from './types/versioning';
 // Config modules
 export { AgentDetector, agentDetector } from './core/config';
 export { ConfigManager, configManager, UserPreferences, SkillAdapterConfig } from './core/config-manager';
+export { ModelConfigLoader, modelConfigLoader, ModelConfig, ConfigSource, LoadResult } from './core/model-config-loader';
 export * from './types/config';
+
+// Session modules
+export { OpenClawExtractor, ClaudeCodeExtractor, claudeCodeExtractor } from './core/session';
+
+// AI Evolution Engine
+export { AIEvolutionEngine, aiEvolutionEngine, AIRecommendation, EvolutionResult } from './core/evolution';
+export { buildEvolutionPrompt, isChineseContent } from './core/evolution';
+
+// Context Building (non-AI)
+export { EvolutionEngine, evolutionEngine, EvolutionContext, EvolutionRecommendation, MemoryRule, BehaviorStyle } from './core/evolution-engine';
 
 // Version
 export const VERSION = '1.2.0';

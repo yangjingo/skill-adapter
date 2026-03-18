@@ -1,7 +1,7 @@
 /**
  * Skill Registry - Registry client for skill discovery and publishing
  *
- * Integrates with ClawHub and skills.sh for skill discovery and sharing
+ * Integrates with skills.sh for skill discovery and sharing
  */
 
 import * as fs from 'fs';
@@ -19,12 +19,6 @@ import {
  * Default registry configurations
  */
 const DEFAULT_REGISTRIES: Record<RegistryType, RegistryConfig> = {
-  clawhub: {
-    url: 'https://clawhub.ai',
-    name: 'ClawHub',
-    cachePath: '.cache/clawhub',
-    cacheTTL: 3600000 // 1 hour
-  },
   'skills-sh': {
     url: 'https://skills.sh',
     name: 'skills.sh',
@@ -50,7 +44,7 @@ export class SkillRegistry {
   constructor() {
     this.config = new Map();
     this.cache = new Map();
-    this.defaultRegistry = 'clawhub';
+    this.defaultRegistry = 'skills-sh';
 
     // Initialize with default configs
     for (const [type, config] of Object.entries(DEFAULT_REGISTRIES)) {
@@ -77,12 +71,7 @@ export class SkillRegistry {
     }
 
     // Build URL based on registry type
-    let url: string;
-    if (registry === 'clawhub') {
-      url = this.buildClawHubSearchUrl(config.url, options);
-    } else {
-      url = this.buildSkillsShSearchUrl(config.url, options);
-    }
+    const url = this.buildSkillsShSearchUrl(config.url, options);
 
     try {
       const response = await fetch(url, {
@@ -266,18 +255,6 @@ export class SkillRegistry {
     } else {
       this.cache.clear();
     }
-  }
-
-  /**
-   * Build ClawHub search URL
-   */
-  private buildClawHubSearchUrl(baseUrl: string, options: RegistrySearchOptions): string {
-    const params = new URLSearchParams();
-    if (options.query) params.set('search', options.query);
-    if (options.limit) params.set('limit', String(options.limit));
-    if (options.offset) params.set('offset', String(options.offset));
-    if (options.sortBy) params.set('sort', options.sortBy);
-    return `${baseUrl}/api/skills?${params.toString()}`;
   }
 
   /**

@@ -91,9 +91,9 @@ export class RecommendationEngine {
   /**
    * Get insights for a specific remote skill
    */
-  async getInsight(skillName: string, platform?: 'skills-sh' | 'clawhub'): Promise<SkillInsight | null> {
+  async getInsight(skillName: string, platform?: 'skills-sh'): Promise<SkillInsight | null> {
     const skills = await this.fetcher.search(skillName, {
-      platforms: platform ? [platform] : ['skills-sh', 'clawhub'],
+      platforms: platform ? [platform] : ['skills-sh'],
       limit: 1
     });
 
