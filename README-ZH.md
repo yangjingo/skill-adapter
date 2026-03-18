@@ -91,19 +91,6 @@ sa summary fs-skill
 
 ---
 
-## CLI 命令
-
-| 命令 | 说明 |
-|------|------|
-| `sa install <url>` | 从 URL 安装 Skill |
-| `sa evolve --last N --analyze` | 运行进化分析 |
-| `sa summary <skill-name>` | 查看效能总结 |
-| `sa list` | 列出所有跟踪的 Skill |
-| `sa workspace` | 分析当前工作空间 |
-| `sa patch <action>` | 管理 Skill 补丁 |
-
----
-
 ## 评估报告示例
 
 执行 `sa summary` 后，你将得到如下反馈：
@@ -119,39 +106,25 @@ sa summary fs-skill
 
 ---
 
-## 目录结构
+## 致谢
 
-```
-skill-adapter/
-├── src/
-│   ├── core/
-│   │   ├── analyzer.ts     # Session 语义分析
-│   │   ├── patcher.ts      # Skill 注入引擎
-│   │   ├── workspace.ts    # 空间规则解析
-│   │   ├── evaluator.ts    # 进化效果评估
-│   │   ├── telemetry.ts    # 数据采集 (Token/Calls/Rounds)
-│   │   └── database.ts     # 进化数据存储
-│   └── report/
-│       └── summary.ts      # 生成 Markdown 评估总结
-├── package.json
-├── tsconfig.json
-└── evolution.db            # 存储进化轨迹与版本对比数据
-```
+本项目参考并集成了以下开源项目：
 
----
+- **[skills.sh](https://skills.sh)** - Vercel Labs 开发的开放技能生态系统
+  - 本项目使用官方 `skills` CLI 进行技能发现和安装
+  - 部分发现 API 端点参考了 skills.sh 的实现
+  - 安装: `npm install skills` 或 `npx skills`
 
-## 开发
+### 功能对照
 
-```bash
-# 安装依赖
-npm install
-
-# 构建
-npm run build
-
-# 开发模式
-npm run dev
-```
+| 功能 | skill-adapter | skills CLI |
+|------|--------------|------------|
+| 技能发现 | ✅ `sa import` | ✅ `skills find` |
+| 技能安装 | ✅ 调用 skills CLI | ✅ `skills add` |
+| 安全扫描 | ✅ `sa scan` | ❌ |
+| 进化追踪 | ✅ `sa evolve` | ❌ |
+| 效能评估 | ✅ `sa summary` | ❌ |
+| 版本管理 | ✅ `sa log` | ✅ `skills check` |
 
 ---
 

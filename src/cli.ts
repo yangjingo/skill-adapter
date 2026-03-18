@@ -42,7 +42,7 @@ import { saAgentEvolutionEngine, SAAgentRecommendation, modelConfigLoader } from
 // New modules
 import { securityEvaluator } from './core/security';
 import { skillExporter, skillRegistry } from './core/sharing';
-import { platformFetcher, recommendationEngine, skillAnalyzer } from './core/discovery';
+import { platformFetcher, recommendationEngine, skillAnalyzer, skillsCli } from './core/discovery';
 import { RemoteSkill } from './types/discovery';
 import { versionManager } from './core/versioning';
 import { agentDetector } from './core/config';
@@ -203,19 +203,16 @@ program
     const useOfficialCli = !options.noNpx && !isLocalPath && !isOpenClawSkill && !source.startsWith('http');
 
     if (useOfficialCli) {
-      console.log('🔧 Installing with official CLI...\n');
+      console.log('🔧 Installing with official skills CLI...\n');
       try {
-        const { execSync } = require('child_process');
-
-        // Build command for skills.sh
-        let command = '';
         let skillName = source;
+        let repoRef = source;
 
         // Check if source is a skills.sh URL or owner/repo format
         if (source.includes('skills.sh') || source.includes('/')) {
           // Direct repo reference - use skills.sh format
           const skillsShUrl = source.includes('skills.sh') ? source : `https://skills.sh/${source}`;
-          command = `npx skills add ${source.includes('/') && !source.includes('skills.sh') ? source : skillsShUrl.replace('https://skills.sh/', '')}`;
+          repoRef = skillsShUrl.replace('https://skills.sh/', '');
           console.log(`   Source: ${skillsShUrl}\n`);
         } else {
           // Skill name - search for it
@@ -225,26 +222,91 @@ program
             const found = searchResults[0];
             skillName = found.name;
             const repo = found.repository || source;
-            // Use owner/repo format for npx skills add
-            const repoRef = repo.includes('github.com') ? repo.replace('https://github.com/', '') : repo;
-            command = `npx skills add ${repoRef} --skill ${found.name}`;
+            // Use owner/repo format for skills add
+            repoRef = repo.includes('github.com') ? repo.replace('https://github.com/', '') : repo;
             console.log(`   Source: https://skills.sh/${repoRef}`);
             console.log(`   Skill: ${found.name}\n`);
           } else {
             // Not found - try as direct skill name
             console.log(`   Skill "${source}" not found, trying direct install...\n`);
-            command = `npx skills add ${source}`;
           }
         }
 
-        console.log(`$ ${command}\n`);
-        execSync(command, { stdio: 'inherit' });
+        // Use SkillsCliWrapper for installation
+        const result = await skillsCli.add(repoRef, { skill: skillName !== source ? skillName : undefined });
+        const finalSkillName = result.skillName || skillName;
 
-        console.log('\n✅ Installation complete!');
-        console.log('\n📌 Next Steps:');
-        console.log('   sa info              # View installed skills');
-        console.log(`   sa info ${skillName}  # View skill details`);
-        console.log('   sa evolve <skill>    # Analyze and optimize');
+        if (result.success) {
+          console.log('\n✅ Installation complete!\n');
+
+          // Step 2: Security scan (unless --no-scan)
+          let securityPassed = true;
+          if (options.scan) {
+            console.log('🔒 Running security scan...\n');
+            const skillContent = await skillsCli.getSkillContent(finalSkillName);
+
+            if (skillContent) {
+              const scanResult = securityEvaluator.scan(skillContent, finalSkillName);
+
+              if (scanResult.passed) {
+                console.log('   ✅ Security scan passed\n');
+              } else {
+                securityPassed = false;
+                console.log('   ⚠️  Security issues detected:\n');
+                const allFindings = [
+                  ...scanResult.sensitiveInfoFindings.map(f => ({ severity: f.severity, type: f.type })),
+                  ...scanResult.dangerousOperationFindings.map(f => ({ severity: f.severity, type: f.type }))
+                ];
+                for (const issue of allFindings) {
+                  console.log(`   - ${issue.severity.toUpperCase()}: ${issue.type}`);
+                }
+                console.log('\n   💡 Review issues before using this skill\n');
+              }
+            } else {
+              console.log('   ⚠️  Could not read skill content for scanning\n');
+            }
+          }
+
+          // Step 3: Track in evolution database
+          const db = new EvolutionDatabase();
+          const skillPath = skillsCli.getSkillPath(finalSkillName);
+
+          db.addRecord({
+            id: `import_${Date.now()}`,
+            skillName: finalSkillName,
+            version: '1.0.0',
+            timestamp: new Date(),
+            telemetryData: JSON.stringify({
+              source: repoRef,
+              installedAt: new Date().toISOString(),
+              securityPassed,
+              description: 'Initial import from skills.sh'
+            }),
+            patches: '[]',
+            importSource: `skills.sh:${repoRef}`,
+            securityPassed,
+            skillPath: skillPath || undefined
+          });
+
+          console.log('📊 Tracking enabled for evolution analysis\n');
+
+          // Step 4: Friendly next steps
+          console.log('📌 Next Steps:');
+          console.log(`   sa info ${finalSkillName}       # View skill details`);
+          console.log(`   sa scan ${finalSkillName}       # Run detailed security scan`);
+          console.log(`   sa evolve ${finalSkillName}     # Analyze and optimize`);
+          console.log('\n💡 Also available:');
+          console.log('   skills ls                  # List all installed skills (official CLI)');
+          console.log(`   skills remove ${finalSkillName}  # Remove this skill`);
+
+        } else {
+          console.error(`\n❌ Installation failed: ${result.output}\n`);
+          console.log('💡 Possible solutions:\n');
+          console.log('   1. Check skill name or repository');
+          console.log('      sa import                    # Browse hot skills\n');
+          console.log('   2. Use built-in import (skip official CLI)');
+          console.log(`      sa import ${source} --no-npx\n`);
+        }
         return;
       } catch (error) {
         // Official CLI failed - provide helpful error
@@ -1446,9 +1508,12 @@ program
           const filteredLines = lines.filter(line => {
             const trimmed = line.trim();
             if (!trimmed) return false;
-            // Skip separator-only lines
-            if (/^[\u2500-\u257F\u2010-\u2015\-_=\-*#\.~\s│┌┐└┘├┤┬┴┼]+$/.test(trimmed)) return false;
+            // Skip separator lines (single or repeated separator chars)
+            if (/^[─—–\-_=*#.~\s]+$/.test(trimmed)) return false;
+            // Skip lines with 3+ repeated same character
             if (/^(.)\1{2,}$/.test(trimmed)) return false;
+            // Skip very short separator-like lines
+            if (trimmed.length <= 2 && /^[─—–\-_=*#.~\s│┌┐└┘├┤┬┴┼]+$/.test(trimmed)) return false;
             return true;
           });
           if (filteredLines.length > 0) {
@@ -2561,6 +2626,27 @@ program
         console.log('');
       }
 
+      // NEW: Show skills installed via official skills CLI
+      const installedSkills = await skillsCli.list();
+      if (installedSkills.length > 0) {
+        console.log('── skills.sh (Official CLI) ──');
+        for (const skill of installedSkills) {
+          console.log(`  📦 ${skill.name}${skill.version ? ` (v${skill.version})` : ''}`);
+        }
+        console.log('');
+      }
+
+      const totalSkills = importedSkills.length + openClawSkills.length +
+                         claudeCodeCommands.length + claudeCodeSkills.length + installedSkills.length;
+
+      if (totalSkills === 0) {
+        console.log('No skills found to scan.\n');
+        console.log('📌 Next Steps:');
+        console.log('   sa import <skill>        # Import a skill first');
+        console.log('   npx skills add <owner/repo> --skill <name>  # Install via official CLI');
+        return;
+      }
+
       console.log('📌 Next Steps:');
       console.log('   sa scan <skill-name>     # Scan imported skill');
       console.log('   sa scan <file-path>      # Scan local file');
@@ -2661,6 +2747,16 @@ program
         }
       }
 
+      // NEW: Check skills installed via official skills CLI
+      if (!skillContent) {
+        const installedContent = await skillsCli.getSkillContent(skillOrFile);
+        if (installedContent) {
+          skillContent = installedContent;
+          skillPath = skillsCli.getSkillPath(skillOrFile) || '';
+          skillSource = 'skills.sh (installed)';
+        }
+      }
+
       // If still no content, try to fetch from remote
       if (!skillContent) {
         console.log('   Fetching skill content from remote...\n');
@@ -2700,8 +2796,86 @@ program
         return;
       }
 
-      // Run security scan
-      const result = securityEvaluator.scan(skillContent, skillOrFile);
+      // Run security scan with SA Agent
+      const useAI = saAgentEvolutionEngine.isAvailable();
+
+      let result;
+      if (useAI) {
+        // SA Agent-powered deep scan with streaming
+        console.log('─'.repeat(60));
+        console.log('🤖 SA Agent Security Analysis');
+        console.log('─'.repeat(60) + '\n');
+
+        const thinkingSpinner = ora('Connecting to SA Agent model...').start();
+        let thinkingStarted = false;
+        let lineBuffer = '';
+
+        // Filter helper function - more aggressive separator detection
+        const isSeparatorLine = (line: string): boolean => {
+          const trimmed = line.trim();
+          // Skip empty lines
+          if (!trimmed) return true;
+          // Skip very short lines (1-3 chars) that are separator-like
+          if (trimmed.length <= 3) {
+            // Common separator characters including box-drawing chars
+            const separatorChars = '─—–-_=/\\|*#.~┌┐└┘├┤┬┴┼│';
+            // Check if all chars are separator chars
+            if ([...trimmed].every(c => separatorChars.includes(c) || /\s/.test(c))) {
+              return true;
+            }
+          }
+          // Skip lines that are purely separator characters
+          if (/^[─—–\-_=*#.~\s│┌┐└┘├┤┬┴┼]+$/.test(trimmed)) return true;
+          // Skip lines with 2+ repeated same separator char
+          if (/^(.)\1{1,}$/.test(trimmed)) {
+            const char = trimmed[0];
+            if (/[─—–\-_=*#.~│┌┐└┘├┤┬┴┼]/.test(char)) return true;
+          }
+          return false;
+        };
+
+        result = await securityEvaluator.scanWithAI(skillContent, skillOrFile, { useAI: true }, {
+          onProgress: (msg) => {
+            if (thinkingSpinner.isSpinning) {
+              thinkingSpinner.text = msg;
+            }
+          },
+          onThinking: (text) => {
+            if (!thinkingStarted) {
+              thinkingSpinner.stop();
+              console.log('\n💭 SA Agent Thinking (streaming):\n');
+              console.log('─'.repeat(40));
+              thinkingStarted = true;
+            }
+            // Buffer and output complete lines only
+            lineBuffer += text;
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || '';
+            const filteredLines = lines.filter(line => !isSeparatorLine(line));
+            if (filteredLines.length > 0) {
+              process.stdout.write(filteredLines.join('\n') + '\n');
+            }
+          },
+          onContent: (text) => {
+            // Content output handled after analysis
+          },
+        });
+
+        // Filter and output any remaining buffer content
+        if (lineBuffer.trim() && !isSeparatorLine(lineBuffer)) {
+          process.stdout.write(lineBuffer + '\n');
+        }
+        if (thinkingStarted) {
+          console.log('\n─'.repeat(40));
+          console.log('\n✅ SA Agent analysis complete!\n');
+        } else {
+          thinkingSpinner.succeed('SA Agent analysis complete');
+        }
+      } else {
+        // Basic scan only
+        result = securityEvaluator.scan(skillContent, skillOrFile);
+      }
+
       const report = securityEvaluator.generateReport(result, options.format as 'text' | 'json' | 'markdown');
       console.log(report);
 
