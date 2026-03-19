@@ -8,12 +8,12 @@
 
 ```
 总任务: 4 个核心模块
-已完成: 1 个 (AI Evolution Engine)
+已完成: 3 个 (AI Evolution Engine, Security Scanner, Evaluator)
 重构完成: 3 个 (硬编码优化)
 进行中: 0 个
 待处理: 3 个 (低优先级接口预留)
 
-进度: ████████████████░░░░░░ 50%
+进度: ████████████████████░░░░ 75%
 ```
 
 ### ✅ AI Agent 实现
@@ -21,6 +21,8 @@
 | 模块 | 文件 | 功能 | 完成日期 |
 |------|------|------|----------|
 | Evolution Engine | `core/evolution/` | AI 引擎 + 流式输出 + 中英文 Prompt | 2026-03-18 |
+| Security Scanner | `core/security/` | AI 安全扫描 + 流式输出 + 漏洞检测 | 2026-03-19 |
+| Evaluator | `core/evaluator.ts` | AI 评估报告 + 流式输出 + 智能分析 | 2026-03-19 |
 
 ### 🔧 已重构模块 (硬编码优化)
 
@@ -72,7 +74,11 @@
 │                                                             │
 │ 🔮 未来 AI 改造候选                                          │
 │    core/discovery/fetcher.ts  Agent + chrome/websearch 推荐  │
-│    core/security/             漏洞检测 (已在改造中)           │
+│                                                             │
+│ ✅ AI Agent 实现 (已完成)                                    │
+│    core/evolution/           AI 进化引擎 + 流式输出          │
+│    core/security/            AI 安全扫描 (scanWithAI)        │
+│    core/evaluator.ts         AI 评估报告 (evaluateWithAI)    │
 │                                                             │
 │ ⬜ 保持硬编码 (无需改动)                                       │
 │    core/patcher.ts           字符串操作                      │
@@ -80,7 +86,6 @@
 │    report/summary.ts         报告生成                        │
 │    core/sharing/             技能导入导出                     │
 │    cli.ts import 命令        技能安装 (npx skills add 包装)   │
-│    core/evaluator.ts         评估报告                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -99,12 +104,14 @@ cli.ts
   │
   ├── import 命令 (硬编码) ──────────► npx skills add 包装器
   │
-  ├── EvolutionEngine (规则备用) ✅
+  ├── EvolutionEngine (AI) ✅
+  ├── SecurityScanner (AI) ✅ ───────► vet 命令使用 scanWithAI
+  ├── Evaluator (AI) ✅ ─────────────► summary 命令可使用 evaluateWithAI
+  │
   ├── WorkspaceAnalyzer (硬编码) ⬜ 接口预留
   ├── SessionAnalyzer (硬编码) ⬜ 接口预留
-  ├── RecommendationEngine (硬编码) ⬜ 接口预留
-  │     └── PlatformFetcher (硬编码) 🔮 未来 AI 改造
-  └── Evaluator (硬编码)
+  └── RecommendationEngine (硬编码) ⬜ 接口预留
+        └── PlatformFetcher (硬编码) 🔮 未来 AI 改造
 ```
 
 **核心流程**: `配置搜索` → `Session提取` → `AI进化分析`
@@ -290,6 +297,27 @@ export class AnalyzerFactory {
 ---
 
 ## 📝 变更记录
+
+### 2026-03-19
+
+**已完成**:
+- ✅ 移除 `summary --ai` 选项
+  - **设计决策**: summary 是数据展示命令，不需要 AI
+  - evolve 时 AI 已经分析了数据，summary 只需提取展示
+  - 避免重复调用 AI 做无意义分析
+  - 简化用户心智：所有命令 AI 使用统一为隐式（自动检测）
+- ✅ 测试文档英文转换
+  - 将 `tests/*.md` 所有中文提示转换为英文
+  - 提升国际化友好度
+- ✅ 文档冗余清理
+  - 删除 `tests/06-log.md` (log 命令文档)
+  - 删除 `tests/quick-reference.md` (与各命令文档重复)
+  - 删除 `docs/README.md` (与 tests/README.md 重复)
+  - 修复 README.md 中的文档链接
+
+**设计原则**:
+- `sa evolve` / `sa vet` - AI 是核心功能，隐式使用
+- `sa summary` - 纯数据展示，不需要 AI
 
 ### 2026-03-18
 

@@ -4,7 +4,7 @@
 
 `Skill-Adapter` is an evolution management layer designed for **Claude Code** and **OpenClaw**. It handles skill localization, self-iteration, performance evaluation, security scanning, and skill sharing.
 
-[中文文档](./README-ZH.md) | [User Guide](./docs/USER_GUIDE.md) | [API Docs](./docs/API.md) | [Registry Integration](./docs/REGISTRY_INTEGRATION.md)
+[中文文档](./README-ZH.md) | [User Guide](./docs/user-guide.md) | [API Docs](./docs/api.md) | [Registry Integration](./docs/registry.md)
 
 ---
 
@@ -60,9 +60,8 @@ sa info -p claudecode
 sa evolve docker-env
 sa evolve docker-env --apply
 
-# View version history
-sa log docker-env
-sa log docker-env --stat
+# View evolution metrics
+sa summary docker-env
 
 # Export skill
 sa share docker-env -o docker-env.zip
@@ -87,8 +86,9 @@ sa export docker-env         # Export specific skill
 | `sa evolve [skill]` | Run evolution analysis |
 | `sa share [skill]` | Export or publish skill |
 | `sa export [skill]` | Export from platforms |
-| `sa log [skill]` | View version history |
 | `sa scan [file]` | Security scan |
+| `sa summary <skill>` | View evolution metrics |
+| `sa config` | Manage preferences |
 
 ---
 
@@ -233,9 +233,10 @@ node dist/cli.js evolve
 
 ## Documentation
 
-- [User Guide](./docs/USER_GUIDE.md) - Complete usage instructions
-- [API Documentation](./docs/API.md) - Programmatic API reference
-- [Registry Integration](./docs/REGISTRY_INTEGRATION.md) - Build your own registry
+- [User Guide](./docs/user-guide.md) - Complete usage instructions
+- [API Documentation](./docs/api.md) - Programmatic API reference
+- [Command Reference](./docs/commands/README.md) - CLI command documentation
+- [Registry Integration](./docs/registry.md) - Build your own registry
 
 ---
 
@@ -257,7 +258,6 @@ This project integrates and references the following open-source projects:
 | Security Scanning | ✅ `sa scan` | ❌ |
 | Evolution Tracking | ✅ `sa evolve` | ❌ |
 | Performance Metrics | ✅ `sa summary` | ❌ |
-| Version Management | ✅ `sa log` | ✅ `skills check` |
 
 ---
 
