@@ -40,8 +40,8 @@ export * from './types/config';
 // Session modules
 export { OpenClawExtractor, ClaudeCodeExtractor, claudeCodeExtractor } from './core/session';
 
-// AI Evolution Engine
-export { AIEvolutionEngine, aiEvolutionEngine, AIRecommendation, EvolutionResult } from './core/evolution';
+// SA Agent Evolution Engine
+export { SAAgentEvolutionEngine, saAgentEvolutionEngine, SAAgentRecommendation, EvolutionResult } from './core/evolution';
 export { buildEvolutionPrompt, isChineseContent } from './core/evolution';
 
 // Context Building (non-AI)
