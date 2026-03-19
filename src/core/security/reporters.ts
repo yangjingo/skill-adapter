@@ -147,7 +147,7 @@ export class SecurityReporters {
     lines.push('');
 
     // Recommendations
-    if (result.riskAssessment.recommendations.length > 0) {
+    if (result.riskAssessment.recommendations?.length > 0) {
       lines.push('─'.repeat(40));
       lines.push('  RECOMMENDATIONS');
       lines.push('─'.repeat(40));
@@ -275,7 +275,7 @@ export class SecurityReporters {
     }
 
     // Recommendations
-    if (result.riskAssessment.recommendations.length > 0) {
+    if (result.riskAssessment.recommendations?.length > 0) {
       lines.push('## Recommendations');
       lines.push('');
       for (let i = 0; i < result.riskAssessment.recommendations.length; i++) {
