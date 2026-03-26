@@ -66,7 +66,7 @@ sa import ./suspicious-skill.md  # 发现问题会发出警告
 ### 安装
 
 ```bash
-npm install -g skill-adapter
+npm install -g @yangjingo/skill-adapter
 ```
 
 ### 1. 适配并安装
