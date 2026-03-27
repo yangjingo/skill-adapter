@@ -553,7 +553,7 @@ program
           console.log('   Source: https://skills.sh');
           console.log(`   URL: ${skillsShUrl.pageUrl}`);
           console.log(`   Skill: ${skillsShUrl.skill}`);
-          const searchResult = await skillsCli.find(skillsShUrl.skill, { limit: 3 });
+          const searchResult = await (skillsCli as any).find(skillsShUrl.skill, { limit: 3 });
           if (searchResult.success && searchResult.results.length > 0) {
             const found = searchResult.results[0];
             skillName = found.skill;
@@ -572,7 +572,7 @@ program
           console.log(`   URL: ${skillsShUrl?.pageUrl || `https://skills.sh/${skillRef.repoSlug}${skillRef.skill ? `/${skillRef.skill}` : ''}`}\n`);
         } else {
           // Skill name - search with the official CLI
-          const searchResult = await skillsCli.find(source, { limit: 3 });
+          const searchResult = await (skillsCli as any).find(source, { limit: 3 });
 
           if (searchResult.success && searchResult.results.length > 0) {
             const found = searchResult.results[0];
@@ -663,8 +663,9 @@ program
 
         } else {
           console.error(`\n⚠️  Official skills CLI failed: ${result.output}\n`);
-          if (result.command) {
-            console.log(`   Command: ${result.command}`);
+          const command = (result as any).command;
+          if (command) {
+            console.log(`   Command: ${command}`);
           }
           if (isSkillsShSource) {
             return;
