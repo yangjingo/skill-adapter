@@ -1,6 +1,6 @@
 # Skill-Adapter Test Documentation
 
-> Last updated: 2026-03-19
+> Last updated: 2026-03-27
 
 ---
 
@@ -8,6 +8,7 @@
 
 - [x] Convert all Chinese hints to English in test documentation files
 - [x] Remove redundant documentation (quick-reference.md, 06-log.md)
+- [x] Sync `sa import` docs with simplified behavior and local Claude Code skill-name import
 
 ---
 

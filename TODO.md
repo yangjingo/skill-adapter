@@ -1,16 +1,16 @@
 # Skill-Adapter TODO
 
-> Updated: 2026-03-19
+> Updated: 2026-03-27
 
 ## Progress Overview
 
 ```
-Total Items: 10
-Completed: 7 (70%)
-Pending: 0
-Broken: 3
+Total Items: 11
+Completed: 8 (73%)
+Pending: 1
+Broken: 2
 
-Progress: ██████████████░░░░░░ 70% (Completed)
+Progress: ███████████████░░░░░ 73% (Completed)
 ```
 
 ## Priority
@@ -38,13 +38,12 @@ P3 = Low       (Optional, can be deferred)
 
 ## Changelog
 
+**2026-03-27**: `sa import` simplified flow verified (discover/recommend/local import) + local Claude Code skill name import fixed
+**2026-03-27**: Task added: `sa share -pr <skill-name>` create PR to `leow3lab/awesome-ascend-skills`
 **2026-03-19**: Bug: `sa import` fails on skills.sh, skill-cli & chrome-cli
 **2026-03-19**: Tested `sa init`, `sa config` ✅
 **2026-03-19**: Bug reported in `sa evolve` recommend module
 **2026-03-19**: Fixed `sa init` - now shows AI model config + guidance
-**2026-03-19**: Tested `sa info`, `sa log`, `sa summary`, `sa export`, `sa share` ✅
-
-> Older entries archived to `docs/CHANGELOG.md`
 
 ## Status
 
@@ -61,11 +60,13 @@ P3 = Low       (Optional, can be deferred)
 | P1       | `sa share`   | yangjing | 2026-03-19 | `npx ts-node dist/cli.js share modelscope-cli`    |
 | P2       | `sa log`     | yangjing | 2026-03-19 | `npx ts-node dist/cli.js log`                     |
 | P2       | `sa config`  | yangjing | 2026-03-19 | `npx ts-node dist/cli.js config`                  |
+| P0       | `sa import`  | yangjing | 2026-03-27 | `npx ts-node src/cli.ts import qa-only`           |
 
 ## Master Table
 
 | Priority | Feature      | Status | Tested | Notes                   | Test Command                                      |
 | -------- | ------------ | ------ | ------ | ----------------------- | ------------------------------------------------- |
-| P0       | `sa import`  | ❌     |        | Cannot fetch from skills.sh; skill-cli & playwright-cli issues | `npx ts-node dist/cli.js import <skill>` |
+| P0       | `sa import`  | ✅     | yangjing | Simplified to discover/recommend + local import only; local Claude Code skill name import verified | `npx ts-node src/cli.ts import qa-only` |
 | P0       | `sa evolve`  | ❌     |        | Bug in recommend module | `npx ts-node dist/cli.js evolve <skill>`          |
 | P1       | `sa scan`    | ❌     |        | Streaming output broken | `npx ts-node dist/cli.js scan <skill>`            |
+| P1       | `sa share -pr <skill>` | ⬜ |        | Create PR directly to `https://github.com/leow3lab/awesome-ascend-skills` | `npx ts-node dist/cli.js share -pr <skill>` |

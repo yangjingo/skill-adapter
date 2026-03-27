@@ -28,6 +28,7 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as readline from 'readline';
 import { pipeline } from 'stream/promises';
 import { createWriteStream } from 'fs';
 import ora from 'ora';
@@ -72,6 +73,208 @@ function formatSource(platform: string): string {
     return `${COLORS.bold}${COLORS.skillsShBg} skills.sh ${COLORS.reset}`;
   }
   return platform;
+}
+
+function normalizeCliArgs(argv: string[]): string[] {
+  return argv.map(arg => (arg === '-pr' ? '--pr' : arg));
+}
+
+function normalizeDiscoveryPlatform(platform: string): 'skills-sh' | 'custom' {
+  const normalized = platform.toLowerCase();
+  if (normalized === 'custom') return 'custom';
+  if (normalized === 'clawhub' || normalized === 'clawhub.com') {
+    // Compatibility fallback until a dedicated clawhub registry is wired up.
+    return 'skills-sh';
+  }
+  return 'skills-sh';
+}
+
+function isGitHubRepoUrl(repoUrl: string): boolean {
+  return /github\.com[:/]/i.test(repoUrl);
+}
+
+function extractGitHubRepoSlug(repoUrl: string): string | null {
+  const normalized = repoUrl.replace(/\.git$/i, '').replace(/\/$/, '');
+
+  const httpsMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)$/i);
+  if (httpsMatch) return httpsMatch[1];
+
+  const sshMatch = normalized.match(/^git@github\.com:([^/]+\/[^/]+)$/i);
+  if (sshMatch) return sshMatch[1];
+
+  return null;
+}
+
+function parseSkillsShUrl(source: string): { pageUrl: string; githubRepo?: string; skill?: string } | null {
+  const trimmed = source.trim();
+  if (!/^https?:\/\/skills\.sh\//i.test(trimmed)) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const segments = url.pathname.split('/').filter(Boolean);
+    if (segments.length >= 3) {
+      return {
+        pageUrl: `https://skills.sh/${segments[0]}/${segments[1]}/${segments[2]}`,
+        githubRepo: `${segments[0]}/${segments[1]}`,
+        skill: segments[2]
+      };
+    }
+
+    if (segments.length === 2) {
+      return {
+        pageUrl: `https://skills.sh/${segments[0]}/${segments[1]}`,
+        skill: segments[1]
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function parseSkillReference(source: string): { repoSlug: string; skill?: string } | null {
+  const trimmed = source.trim();
+
+  const atMatch = trimmed.match(/^([^/]+\/[^@]+)@([^/]+)$/);
+  if (atMatch) {
+    return { repoSlug: atMatch[1], skill: atMatch[2] };
+  }
+
+  const segments = trimmed.split('/').filter(Boolean);
+  if (segments.length === 3 && !/^https?:\/\//i.test(trimmed)) {
+    return {
+      repoSlug: `${segments[0]}/${segments[1]}`,
+      skill: segments[2]
+    };
+  }
+
+  if (segments.length === 2 && !/^https?:\/\//i.test(trimmed)) {
+    return { repoSlug: `${segments[0]}/${segments[1]}` };
+  }
+
+  return null;
+}
+
+function buildSkillsAddCommand(repoRef: string, skillName?: string): string {
+  const parts = [`npx skills add ${repoRef}`];
+  if (skillName) {
+    parts.push(`--skill ${skillName}`);
+  }
+  return parts.join(' ');
+}
+
+function buildGitHubCompareUrl(repoUrl: string, branchName: string): string | null {
+  const slug = extractGitHubRepoSlug(repoUrl);
+  if (!slug) return null;
+  return `https://github.com/${slug}/compare/${encodeURIComponent(branchName)}?expand=1`;
+}
+
+function hasCommand(command: string): boolean {
+  const { spawnSync } = require('child_process');
+  const result = spawnSync(command, ['--version'], {
+    encoding: 'utf-8',
+    shell: false,
+    stdio: 'ignore'
+  });
+  return !result.error && result.status === 0;
+}
+
+function hasGitHubCli(ghBinary: string): boolean {
+  const { spawnSync } = require('child_process');
+  const result = spawnSync(ghBinary, ['--version'], {
+    encoding: 'utf-8',
+    shell: false,
+    stdio: 'ignore'
+  });
+  return !result.error && result.status === 0;
+}
+
+function isGitHubCliAuthenticated(ghBinary: string): boolean {
+  const { spawnSync } = require('child_process');
+  const result = spawnSync(ghBinary, ['auth', 'status', '--hostname', 'github.com'], {
+    encoding: 'utf-8',
+    shell: false,
+    stdio: 'ignore'
+  });
+  return !result.error && result.status === 0;
+}
+
+function runGitHubCliLogin(ghBinary: string): boolean {
+  const { spawnSync } = require('child_process');
+  const result = spawnSync(ghBinary, ['auth', 'login', '--hostname', 'github.com'], {
+    shell: false,
+    stdio: 'inherit'
+  });
+  return !result.error && result.status === 0;
+}
+
+function promptYesNo(question: string, defaultValue = true): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return Promise.resolve(false);
+  }
+
+  const suffix = defaultValue ? '[Y/n]' : '[y/N]';
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise(resolve => {
+    rl.question(`${question} ${suffix} `, answer => {
+      rl.close();
+      const normalized = answer.trim().toLowerCase();
+      if (!normalized) {
+        resolve(defaultValue);
+        return;
+      }
+      resolve(['y', 'yes'].includes(normalized));
+    });
+  });
+}
+
+function getGhBinary(optionsGh?: string): string {
+  return optionsGh || process.env.GH_CLI_PATH || 'gh';
+}
+
+function printGitHubCliGuidance(ghBinary: string): void {
+  console.log('\n💡 GitHub PR needs `gh` (GitHub CLI).');
+  console.log('   Two ways to continue:');
+  console.log(`   1. Install or provide \`gh\`, then rerun: sa share <skill> --pr --gh ${ghBinary === 'gh' ? '<path-to-gh>' : ghBinary}`);
+  console.log('   2. If `gh` is already installed, run `gh auth login` and retry.');
+  console.log('');
+  console.log('   Install examples:');
+  console.log('   - Windows: winget install GitHub.cli');
+  console.log('   - macOS: brew install gh');
+  console.log('   - Scoop: scoop install gh');
+}
+
+function getDefaultBranch(cwd: string): string {
+  const { execSync } = require('child_process');
+
+  try {
+    const originInfo = execSync('git remote show origin', { cwd, encoding: 'utf-8' });
+    const headBranchMatch = originInfo.match(/HEAD branch:\s*(.+)$/m);
+    if (headBranchMatch?.[1]) {
+      return headBranchMatch[1].trim();
+    }
+  } catch {
+    // Ignore and fall back to the next strategy.
+  }
+
+  try {
+    const symbolicRef = execSync('git symbolic-ref --quiet refs/remotes/origin/HEAD', { cwd, encoding: 'utf-8' });
+    const symbolicMatch = symbolicRef.match(/refs\/remotes\/origin\/(.+)$/m);
+    if (symbolicMatch?.[1]) {
+      return symbolicMatch[1].trim();
+    }
+  } catch {
+    // Ignore and fall back to the default branch name.
+  }
+
+  return 'main';
 }
 
 // Configuration - supports env vars and config file
@@ -221,7 +424,6 @@ program
     console.log('\n💡 Environment Variables:');
     console.log('   SKILL_ADAPTER_REPO      - Skills repository URL');
     console.log('   SKILL_ADAPTER_REGISTRY  - Default registry URL');
-    console.log('   SKILL_ADAPTER_PLATFORM  - Default platform');
     console.log('   ANTHROPIC_AUTH_TOKEN    - AI model API key (required for evolve/scan/recommend)');
   });
 
@@ -233,19 +435,14 @@ program
   .description('Import or discover skills')
   .option('-n, --name <name>', 'Rename skill on import')
   .option('--no-scan', 'Skip security scan')
-  .option('--registry <url>', 'Custom registry URL')
   .option('-l, --limit <number>', 'Limit results when discovering', '10')
-  .option('-p, --platform <platform>', 'Platform for discovery (skills-sh)', 'skills-sh')
-  .option('--no-npx', 'Use built-in import instead of official CLI', false)
-  .action(async (source: string | undefined, options: { name?: string; scan: boolean; registry?: string; limit: string; platform: string; noNpx: boolean }) => {
+  .action(async (source: string | undefined, options: { name?: string; scan: boolean; limit: string }) => {
     // No source provided - show hot skills (discover mode)
     if (!source) {
       console.log('🔥 Discovering hot skills from skills.sh...\n');
 
       try {
         const limit = parseInt(options.limit);
-
-        // Fetch from skills.sh only
         const results = await platformFetcher.fetchHot('skills-sh', limit);
         if (results.length > 0) {
           console.log('Rank | Downloads | Skill');
@@ -270,7 +467,7 @@ program
     console.log(`📥 Getting skill from: ${source}\n`);
 
     // Check if it's a local file/directory first
-    const isLocalPath = fs.existsSync(source);
+    let isLocalPath = fs.existsSync(source);
     const isOpenClawSkill = (() => {
       const openClawPath = findOpenClawSkillsPath();
       if (openClawPath) {
@@ -279,43 +476,128 @@ program
       }
       return false;
     })();
+    if (!isLocalPath) {
+      const claudeCodePath = findClaudeCodeSkillsPath();
+      if (claudeCodePath) {
+        const localClaudeSkillDir = path.join(claudeCodePath, 'skills', source);
+        const hasSkillMd = fs.existsSync(path.join(localClaudeSkillDir, 'skill.md'));
+        const hasSkillMdUpper = fs.existsSync(path.join(localClaudeSkillDir, 'SKILL.md'));
+        if (fs.existsSync(localClaudeSkillDir) && fs.statSync(localClaudeSkillDir).isDirectory() && (hasSkillMd || hasSkillMdUpper)) {
+          console.log('🔍 Found local Claude Code skill\n');
+          source = localClaudeSkillDir;
+          isLocalPath = true;
+        }
+      }
+    }
 
-    // Use official CLI for remote skills (default), unless --no-npx or local path
-    const useOfficialCli = !options.noNpx && !isLocalPath && !isOpenClawSkill && !source.startsWith('http');
+    if (!isLocalPath && !isOpenClawSkill) {
+      const query = source.startsWith('http://') || source.startsWith('https://')
+        ? (source.split('/').filter(Boolean).pop() || source)
+        : source;
+      const searchUrl = `https://skills.sh/?q=${encodeURIComponent(query)}`;
+
+      console.log('🔎 Searching on skills.sh...\n');
+      console.log(`   ${searchUrl}\n`);
+
+      const [searchResults, hotResults] = await Promise.all([
+        platformFetcher.search(query, { limit: 5 }).catch(() => [] as RemoteSkill[]),
+        platformFetcher.fetchHot('skills-sh', 5).catch(() => [] as Array<{ rank: number; skill: RemoteSkill }>)
+      ]);
+
+      if (searchResults.length > 0) {
+        console.log('🎯 Recommendations:');
+        for (const [idx, result] of searchResults.entries()) {
+          console.log(`  ${idx + 1}. ${result.name} (${result.stats.downloads} downloads)`);
+          if (result.url) {
+            console.log(`     ${result.url}`);
+          }
+        }
+      } else {
+        console.log('🎯 Recommendations: none');
+      }
+
+      if (hotResults.length > 0) {
+        console.log('\n🔥 Trending:');
+        for (const entry of hotResults) {
+          console.log(`  #${entry.rank} ${entry.skill.name} (${entry.skill.stats.downloads} downloads)`);
+        }
+      }
+
+      console.log('\n📌 This command no longer auto-downloads remote skills.');
+      console.log('   Install manually if needed: npx skills add <repo> --skill <name>');
+      return;
+    }
+
+    // Official CLI import flow is disabled in simplified mode.
+    const isSkillsShSource = /^https?:\/\/skills\.sh\//i.test(source);
+    const useOfficialCli = false;
+
+    let sourceUrl = 'https://skills.sh';
 
     if (useOfficialCli) {
       console.log('🔧 Installing with official skills CLI...\n');
       try {
         let skillName = source;
         let repoRef = source;
+        const skillsShUrl = parseSkillsShUrl(source);
+        const skillRef = parseSkillReference(source);
 
-        // Check if source is a skills.sh URL or owner/repo format
-        if (source.includes('skills.sh') || source.includes('/')) {
-          // Direct repo reference - use skills.sh format
-          const skillsShUrl = source.includes('skills.sh') ? source : `https://skills.sh/${source}`;
-          repoRef = skillsShUrl.replace('https://skills.sh/', '');
-          console.log(`   Source: ${skillsShUrl}\n`);
-        } else {
-          // Skill name - search for it
-          const searchResults = await platformFetcher.search(source, { limit: 3, platforms: ['skills-sh'] });
-
-          if (searchResults.length > 0) {
-            const found = searchResults[0];
-            skillName = found.name;
-            const repo = found.repository || source;
-            // Use owner/repo format for skills add
-            repoRef = repo.includes('github.com') ? repo.replace('https://github.com/', '') : repo;
-            console.log(`   Source: https://skills.sh/${repoRef}`);
-            console.log(`   Skill: ${found.name}\n`);
+        // Direct skills.sh skill page or shorthand reference
+        if (skillsShUrl?.githubRepo && skillsShUrl.skill) {
+          repoRef = `https://github.com/${skillsShUrl.githubRepo}`;
+          skillName = skillsShUrl.skill;
+          console.log('   Source: https://skills.sh');
+          console.log(`   URL: ${skillsShUrl.pageUrl}`);
+          console.log('');
+        } else if (skillsShUrl?.skill) {
+          console.log('   Source: https://skills.sh');
+          console.log(`   URL: ${skillsShUrl.pageUrl}`);
+          console.log(`   Skill: ${skillsShUrl.skill}`);
+          const searchResult = await skillsCli.find(skillsShUrl.skill, { limit: 3 });
+          if (searchResult.success && searchResult.results.length > 0) {
+            const found = searchResult.results[0];
+            skillName = found.skill;
+            repoRef = found.package;
+            console.log(`   Installs: ${found.installs.toLocaleString()}`);
+            console.log('');
           } else {
-            // Not found - try as direct skill name
-            console.log(`   Skill "${source}" not found, trying direct install...\n`);
+            console.log('');
+          }
+        } else if (skillRef) {
+          repoRef = `https://github.com/${skillRef.repoSlug}`;
+          if (skillRef.skill) {
+            skillName = skillRef.skill;
+          }
+          console.log('   Source: https://skills.sh');
+          console.log(`   URL: ${skillsShUrl?.pageUrl || `https://skills.sh/${skillRef.repoSlug}${skillRef.skill ? `/${skillRef.skill}` : ''}`}\n`);
+        } else {
+          // Skill name - search with the official CLI
+          const searchResult = await skillsCli.find(source, { limit: 3 });
+
+          if (searchResult.success && searchResult.results.length > 0) {
+            const found = searchResult.results[0];
+            skillName = found.skill;
+            repoRef = found.package;
+            console.log('   Source: https://skills.sh');
+            console.log(`   Skill: ${found.skill}`);
+            console.log(`   Installs: ${found.installs.toLocaleString()}`);
+            const discoveredUrl = found.url || `https://skills.sh/${found.repository}/${found.skill}`;
+            console.log(`   URL: ${discoveredUrl}`);
+            console.log('');
+          } else {
+            // Not found - try the provided source directly with the official CLI
+            console.log(`   Skill "${source}" not found in official skills search, trying direct install...\n`);
           }
         }
 
         // Use SkillsCliWrapper for installation
-        const result = await skillsCli.add(repoRef, { skill: skillName !== source ? skillName : undefined });
-        const finalSkillName = result.skillName || skillName;
+        const addOptions = skillName !== source ? { skill: skillName, yes: true } : { yes: true };
+        console.log(`   Command: ${buildSkillsAddCommand(repoRef, addOptions.skill)}`);
+        const result = await skillsCli.add(repoRef, addOptions);
+        const finalSkillName = (result.skillName || skillName || '').trim();
+        if (!finalSkillName) {
+          throw new Error('Could not determine installed skill name');
+        }
 
         if (result.success) {
           console.log('\n✅ Installation complete!\n');
@@ -327,7 +609,8 @@ program
             const skillContent = await skillsCli.getSkillContent(finalSkillName);
 
             if (skillContent) {
-              const scanResult = securityEvaluator.scan(skillContent, finalSkillName);
+              const scanContent: string = skillContent;
+              const scanResult = securityEvaluator.scan(scanContent, finalSkillName);
 
               if (scanResult.passed) {
                 console.log('   ✅ Security scan passed\n');
@@ -376,31 +659,24 @@ program
           console.log(`   sa info ${finalSkillName}       # View skill details`);
           console.log(`   sa scan ${finalSkillName}       # Run detailed security scan`);
           console.log(`   sa evolve ${finalSkillName}     # Analyze and optimize`);
-          console.log('\n💡 Also available:');
-          console.log('   skills ls                  # List all installed skills (official CLI)');
-          console.log(`   skills remove ${finalSkillName}  # Remove this skill`);
+          return;
 
         } else {
-          console.error(`\n❌ Installation failed: ${result.output}\n`);
-          console.log('💡 Possible solutions:\n');
-          console.log('   1. Check skill name or repository');
-          console.log('      sa import                    # Browse hot skills\n');
-          console.log('   2. Use built-in import (skip official CLI)');
-          console.log(`      sa import ${source} --no-npx\n`);
+          console.error(`\n⚠️  Official skills CLI failed: ${result.output}\n`);
+          if (result.command) {
+            console.log(`   Command: ${result.command}`);
+          }
+          if (isSkillsShSource) {
+            return;
+          }
+          console.log('💡 Falling back to built-in import...\n');
         }
-        return;
       } catch (error) {
         // Official CLI failed - provide helpful error
-        console.error('\n❌ Official CLI installation failed\n');
-        console.log('💡 Possible solutions:\n');
-        console.log('   1. Check skill name or repository');
-        console.log('      sa import                    # Browse hot skills\n');
-        console.log('   2. Use built-in import (skip official CLI)');
-        console.log(`      sa import ${source} --no-npx\n`);
-        console.log('📌 Manual install:');
-        console.log(`   npx skills add <owner/repo> --skill <name>`);
-        console.log(`   Example: npx skills add vercel-labs/agent-skills --skill web-design-guidelines`);
-        return;
+        console.error('\n⚠️  Official CLI unavailable, falling back to built-in import.\n');
+        if (isSkillsShSource) {
+          return;
+        }
       }
     }
 
@@ -411,6 +687,7 @@ program
       let skillPackage = null;
       let sourceType = 'unknown';
       let skillPath = '';  // Track where skill files are located
+      let contentFetchWarning = '';
 
       if (source.startsWith('http://') || source.startsWith('https://')) {
         sourceType = 'url';
@@ -419,9 +696,15 @@ program
           sourceType = 'registry';
           console.log('🔍 Detected: Registry URL');
 
+          const registrySkill = parseSkillsShUrl(source);
+          if (registrySkill?.githubRepo && registrySkill.skill) {
+            const commandRepo = `https://github.com/${registrySkill.githubRepo}`;
+            console.log(`   Command: ${buildSkillsAddCommand(commandRepo, registrySkill.skill)}`);
+          }
+
           // Extract skill name from URL
-          const name = options.name || source.split('/').pop()?.replace(/\.git$/, '') || 'imported-skill';
-          const registryUrl = options.registry || new URL(source).origin;
+          const name = options.name || registrySkill?.skill || source.split('/').pop()?.replace(/\.git$/, '') || 'imported-skill';
+          const registryUrl = new URL(source).origin;
 
           // Download from registry (ZIP format)
           const downloadUrl = `${registryUrl}/api/skills/${name}/download`;
@@ -468,6 +751,27 @@ program
               content: { systemPrompt },
               metadata: { createdAt: new Date(), updatedAt: new Date() }
             };
+          } else if (fs.existsSync(skillMdPath)) {
+            // Claude Code format (skill.md without skill.json)
+            const skillName = options.name || path.basename(source);
+            const systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
+
+            skillPackage = {
+              id: `skill_${Date.now()}`,
+              manifest: {
+                name: skillName,
+                version: '1.0.0',
+                description: `Claude Code skill: ${skillName}`,
+                author: 'claude-code',
+                license: 'MIT',
+                keywords: [],
+                main: 'skill.md',
+                compatibility: { platforms: ['claude-code'] }
+              },
+              content: { systemPrompt },
+              metadata: { createdAt: new Date(), updatedAt: new Date() }
+            };
+            console.log('🔍 Detected: Claude Code skill format');
           } else if (fs.existsSync(openClawMdPath)) {
             // OpenClaw format
             const skillName = options.name || path.basename(source);
@@ -534,12 +838,24 @@ program
         if (!skillPackage) {
           console.log('🔍 Searching from skills.sh...\n');
 
+          const loadRemoteContent = async (found: RemoteSkill): Promise<{ content: string; fetched: boolean }> => {
+          const contentSpinner = ora(`Fetching content for ${found.name}...`).start();
+          const content = await platformFetcher.fetchSkillContent(found);
+          if (content) {
+            contentSpinner.succeed(`Fetched content for ${found.name}`);
+            return { content, fetched: true };
+          }
+          contentSpinner.warn(`Could not fetch content for ${found.name}; using fallback description`);
+          console.log(`   Repro: sa import ${source}`);
+          return { content: '', fetched: false };
+          };
+
           // Search from both platforms
           const searchResults = await platformFetcher.search(source, { limit: 5 });
 
           if (searchResults.length === 0) {
             // Fallback to registry download
-            const registryUrl = options.registry || 'http://localhost:3000';
+            const registryUrl = 'http://localhost:3000';
             const downloadUrl = `${registryUrl}/api/skills/${source}/download`;
             console.log(`📦 No results found, trying local registry...`);
 
@@ -564,7 +880,7 @@ program
             console.log(`   ${found.description}\n`);
 
             // Fetch skill content
-            const content = await platformFetcher.fetchSkillContent(found);
+            const contentResult = await loadRemoteContent(found);
             skillPackage = {
               id: `skill_${Date.now()}`,
               manifest: {
@@ -576,10 +892,13 @@ program
                 keywords: found.tags,
                 compatibility: { platforms: ['claude-code'] }
               },
-              content: { systemPrompt: content || `# ${found.name}\n\n${found.description}` },
+              content: { systemPrompt: contentResult.content || `# ${found.name}\n\n${found.description}` },
               metadata: { createdAt: new Date(), updatedAt: new Date(), source: found.platform }
             };
             sourceType = found.platform;
+            if (!contentResult.fetched) {
+              contentFetchWarning = `   ⚠ Using fallback content for ${found.name}`;
+            }
           } else {
             // Multiple results - show all with platform source
             console.log(`📋 Found ${searchResults.length} matching skills:\n`);
@@ -593,7 +912,7 @@ program
             const found = searchResults[0];
             console.log(`📦 Importing: ${found.name} from ${formatSource(found.platform)}\n`);
 
-            const content = await platformFetcher.fetchSkillContent(found);
+            const contentResult = await loadRemoteContent(found);
             skillPackage = {
               id: `skill_${Date.now()}`,
               manifest: {
@@ -605,10 +924,13 @@ program
                 keywords: found.tags,
                 compatibility: { platforms: ['claude-code'] }
               },
-              content: { systemPrompt: content || `# ${found.name}\n\n${found.description}` },
+              content: { systemPrompt: contentResult.content || `# ${found.name}\n\n${found.description}` },
               metadata: { createdAt: new Date(), updatedAt: new Date(), source: found.platform }
             };
             sourceType = found.platform;
+            if (!contentResult.fetched) {
+              contentFetchWarning = `   ⚠ Using fallback content for ${found.name}`;
+            }
           }
         }
       }
@@ -663,10 +985,13 @@ program
         skillPath: skillPath || undefined
       });
 
-      const sourceLabel = getSourceLabel(sourceType, source).split(':')[0];
+      const sourceLabel = sourceType === 'skills-sh' ? sourceUrl : getSourceLabel(sourceType, source).split(':')[0];
       console.log(`\n✅ Installed successfully!`);
       console.log(`   Skill: ${skillPackage.manifest.name} (v${skillPackage.manifest.version})`);
       console.log(`   Source: ${sourceLabel}`);
+      if (contentFetchWarning) {
+        console.log(contentFetchWarning);
+      }
 
       console.log('\n📌 Next Steps:');
       console.log(`   sa info ${skillPackage.manifest.name}       # View skill details`);
@@ -1757,8 +2082,9 @@ program
   .option('--pr', 'Create Pull Request to skills repository', false)
   .option('--repo <url>', 'Target git repository URL', CONFIG.skillsRepo)
   .option('--branch <name>', 'Branch name for PR', '')
+  .option('--gh <path>', 'Path to GitHub CLI binary', process.env.GH_CLI_PATH || 'gh')
   .option('--yes', 'Skip confirmation', false)
-  .action(async (skillName: string | undefined, options: { output?: string; format: string; zip: boolean; registry?: string; pr: boolean; repo: string; branch: string; yes: boolean }) => {
+  .action(async (skillName: string | undefined, options: { output?: string; format: string; zip: boolean; registry?: string; pr: boolean; repo: string; branch: string; gh: string; yes: boolean }) => {
     const db = new EvolutionDatabase();
 
     // No skill specified - list all skills
@@ -1829,6 +2155,36 @@ program
 
       const branchName = options.branch || `skill/${skillName}-v${latestRecord.version}`;
       const tempDir = path.join(os.tmpdir(), 'skill-adapter-pr', skillName);
+      const githubRepoSlug = extractGitHubRepoSlug(options.repo);
+      const githubCompareUrl = buildGitHubCompareUrl(options.repo, branchName);
+      const ghBinary = getGhBinary(options.gh);
+      const isGitHubRepo = Boolean(githubRepoSlug);
+      let canCreateGitHubPr = false;
+
+      if (isGitHubRepo) {
+        if (!hasGitHubCli(ghBinary)) {
+          console.log(`⚠️  GitHub CLI not found: ${ghBinary}`);
+          printGitHubCliGuidance(ghBinary);
+        } else if (!isGitHubCliAuthenticated(ghBinary)) {
+          console.log(`⚠️  GitHub CLI is installed but not authenticated: ${ghBinary}`);
+          const shouldLogin = await promptYesNo('Run gh auth login now?', true);
+          if (shouldLogin) {
+            console.log('\n🔐 Starting interactive GitHub login...');
+            const loginSucceeded = runGitHubCliLogin(ghBinary);
+            if (loginSucceeded && isGitHubCliAuthenticated(ghBinary)) {
+              console.log('✅ GitHub CLI authenticated.\n');
+              canCreateGitHubPr = true;
+            } else {
+              console.log('❌ GitHub CLI login failed or was cancelled.');
+              printGitHubCliGuidance(ghBinary);
+            }
+          } else {
+            printGitHubCliGuidance(ghBinary);
+          }
+        } else {
+          canCreateGitHubPr = true;
+        }
+      }
 
       try {
         // Clone repository
@@ -1862,11 +2218,64 @@ program
         console.log('⬆️ Pushing branch...');
         await execGit(`push -u origin ${branchName}`, tempDir);
 
-        console.log('\n✅ Branch created and pushed!');
-        console.log(`   Branch: ${branchName}`);
-        console.log(`   Repo: ${options.repo}`);
-        console.log('\n💡 Please create Pull Request manually in the web interface.');
-        console.log(`   URL: ${options.repo}/-/merge_requests/new?source_branch=${branchName}`);
+        if (isGitHubRepo && canCreateGitHubPr) {
+          const defaultBranch = getDefaultBranch(tempDir);
+          const title = `feat: Add/Update skill ${skillName} v${latestRecord.version}`;
+          const body = [
+            'Automated skill share from Skill-Adapter.',
+            '',
+            `- Skill: ${skillName}`,
+            `- Version: ${latestRecord.version}`,
+            `- Branch: ${branchName}`,
+            `- Repo: ${options.repo}`
+          ].join('\n');
+
+          console.log('\n🚀 Creating GitHub Pull Request...');
+          const { execFileSync } = require('child_process');
+          const prOutput = execFileSync(
+            'gh',
+            [
+              'pr',
+              'create',
+              '--repo',
+              githubRepoSlug!,
+              '--base',
+              defaultBranch,
+              '--head',
+              branchName,
+              '--title',
+              title,
+              '--body',
+              body
+            ],
+            { cwd: tempDir, encoding: 'utf-8' }
+          ).trim();
+
+          console.log('\n✅ Pull Request created!');
+          console.log(`   Repo: ${options.repo}`);
+          console.log(`   Branch: ${branchName}`);
+          if (prOutput) {
+            console.log(`   URL: ${prOutput}`);
+          } else if (githubCompareUrl) {
+            console.log(`   URL: ${githubCompareUrl}`);
+          }
+        } else if (isGitHubRepo) {
+          console.log('\n✅ Branch created and pushed!');
+          console.log(`   Branch: ${branchName}`);
+          console.log(`   Repo: ${options.repo}`);
+
+          if (githubCompareUrl) {
+            console.log('\n💡 GitHub PR link if you want to open it manually:');
+            console.log(`   URL: ${githubCompareUrl}`);
+          }
+        } else {
+          console.log('\n✅ Branch created and pushed!');
+          console.log(`   Branch: ${branchName}`);
+          console.log(`   Repo: ${options.repo}`);
+
+          console.log('\n💡 Please create Pull Request manually in the web interface.');
+          console.log(`   URL: ${options.repo}/-/merge_requests/new?source_branch=${branchName}`);
+        }
 
       } catch (error) {
         console.error(`❌ PR creation failed: ${error}`);
@@ -2877,7 +3286,7 @@ program
           console.log(`❌ Skill not found: ${skillOrFile}`);
           console.log('\n📌 Next Steps:');
           console.log('   sa scan                   # View scannable skills');
-          console.log('   sa import ' + skillOrFile + ' --no-npx   # Import skill first');
+          console.log('   sa import ' + skillOrFile + '   # Import skill first');
         }
         return;
       }
@@ -3256,4 +3665,5 @@ if (process.argv.length === 2) {
   process.exit(0);
 }
 
-program.parse();
+program.parse(normalizeCliArgs(process.argv));
+
