@@ -54,8 +54,8 @@ sa summary hccn-tools
 
 📌 Next Steps:
    sa log hccn-tools          # View detailed changes
-   sa share hccn-tools        # Export/publish skill
-   sa export hccn-tools       # Export to file
+   sa share hccn-tools        # Create PR
+   sa export hccn-tools       # Export local package
 ```
 
 ### 2. No Evolution Records

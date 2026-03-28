@@ -1,252 +1,137 @@
-# sa share - Share Skills
+# sa share - Create PR For Local Skill
+
+## Quick Start
+
+Most users only need one command:
+
+```bash
+sa share <skill>
+```
+
+Example:
+
+```bash
+sa share qa-only
+```
 
 ## Overview
 
-`sa share` command shares skills, supporting:
-- Export as ZIP package
-- Publish to registry
-- Create Pull Request to skill repository
+`sa share` creates a branch and Pull Request for a local skill.
 
----
+- Input direction: local -> repository (PR)
+- It does **not** auto-merge.
+- Auto PR creation needs GitHub CLI `gh`.
 
-## Command Format
+## GitHub CLI Setup
 
-```bash
-sa share [skillName] [options]
-```
+After `npm install`, the project will check whether `gh` exists.
 
-## Parameters
+- Install `gh`: `npm run setup:gh`
+- Login once: `gh auth login`
+- Auto-install is enabled by default during `npm install`
+- Disable auto-install:
+  - PowerShell: `$env:SA_AUTO_INSTALL_GH='0'; npm install`
+  - bash/zsh: `SA_AUTO_INSTALL_GH=0 npm install`
 
-| Parameter | Description |
-|-----------|-------------|
-| `skillName` | Skill name (optional). Shows shareable skills list when not provided |
-
-## Options
+## Advanced Options
 
 | Option | Description | Default |
-|--------|-------------|---------|
-| `-o, --output <path>` | Export file path | `<skill>-v<version>.zip` |
-| `-f, --format <format>` | Export format (json, yaml, zip) | zip |
-| `--zip` | Export as ZIP (shorthand) | false |
-| `--registry <url>` | Publish to registry URL | - |
-| `--pr` | Create Pull Request | false |
-| `--repo <url>` | Target Git repository URL | Configured skillsRepo |
-| `--branch <name>` | PR branch name | `skill/<name>-v<version>` |
-| `--yes` | Skip confirmation | false |
+|---|---|---|
+| `--repo <url>` | Target git repository URL | `https://github.com/leow3lab/awesome-ascend-skills` |
+| `--branch <name>` | Branch name | `skill/<name>-v<version>` |
+| `--fork-pr` | Push to your fork and create PR to upstream | `false` |
+| `--gh <path>` | GitHub CLI path | `gh` |
+| `--yes` | Skip security confirmation | `false` |
 
----
+## Owner / Non-owner Scenarios
 
-## Usage Examples
+## Flow Diagram
 
-### 1. View Shareable Skills
+```mermaid
+flowchart TD
+  A[sa share skill --repo upstream] --> B{Have write permission on upstream?}
+  B -->|Yes| C[Owner/Collaborator path]
+  C --> D[Clone upstream repo]
+  D --> E[Create branch and commit skill files]
+  E --> F[Push branch to upstream]
+  F --> G[Create PR upstream branch -> upstream default branch]
+
+  B -->|No| H[Non-owner path]
+  H --> I[Use --fork-pr]
+  I --> J[Ensure fork exists under your account]
+  J --> K[Clone fork repo]
+  K --> L[Create branch and commit skill files]
+  L --> M[Push branch to fork]
+  M --> N[Create PR fork branch -> upstream default branch]
+```
+
+```mermaid
+flowchart TD
+  A[sa share skill --repo upstream] --> B[Push branch to upstream]
+  B --> C{Push succeeded?}
+  C -->|Yes| D[Continue normal PR flow]
+  C -->|No: 403 / permission denied| E[Show troubleshooting + next tips]
+  E --> F[Run: sa share skill --repo upstream --fork-pr --yes]
+  F --> G[Ensure fork exists]
+  G --> H[Push branch to fork]
+  H --> I[Create PR fork -> upstream]
+```
+
+### Scenario A: Repository Owner (or collaborator with write permission)
+
+Expected behavior:
+1. Branch is created and pushed
+2. PR is created automatically (when `gh` authenticated)
+
+Run:
 
 ```bash
-sa share
+sa share qa-only --repo https://github.com/leow3lab/awesome-ascend-skills --yes
 ```
 
-**Output Example:**
-```
-📤 Select a skill to share:
+### Scenario B: Non-owner (no write permission)
 
-  • docker-env (v1.1.0)
-  • frontend-design (v1.2.0)
+Expected behavior:
+1. Push/PR fails
+2. CLI prints troubleshooting guidance and next tips for fork PR
 
-📌 Next Steps:
-   sa share <skill-name>      # Share specific skill
-   sa export <skill-name>     # Export skill to file
-```
-
-### 2. Export as ZIP Package
+For non-owner PR flow, use fork mode:
 
 ```bash
-sa share docker-env --zip
+sa share qa-only --repo https://github.com/yuanhechen/OpenMemory --fork-pr --yes
 ```
 
-**Output Example:**
-```
-📤 Sharing skill: docker-env
+Typical guidance includes:
+- `gh auth status`
+- write permission check
+- remote branch verification command
 
-🔒 Running security scan...
-  ✅ Security scan passed
+## Test Script
 
-📦 Exporting to ./docker-env-v1.1.0.zip...
-✅ Export complete!
-   File: ./docker-env-v1.1.0.zip
-```
+Use `tests/test-share-pr.js` for scenario-based testing.
 
-### 3. Specify Output Path
+You can also include it in the global test runner:
 
 ```bash
-sa share docker-env -o ./backup/docker-env.zip
+npm run test:all
+# or:
+RUN_SHARE_PR_TESTS=1 npm test
 ```
 
-### 4. Publish to Registry
+### 1) Owner real-repo test
 
 ```bash
-sa share docker-env --registry http://localhost:3000
+node tests/test-share-pr.js --scenario owner --repo https://github.com/leow3lab/awesome-ascend-skills --skill qa-only
 ```
 
-**Output Example:**
-```
-📤 Sharing skill: docker-env
-
-🔒 Running security scan...
-  ✅ Security scan passed
-
-🚀 Publishing to http://localhost:3000...
-✅ Published successfully!
-   URL: http://localhost:3000/skills/docker-env
-   Version: 1.1.0
-```
-
-### 5. Create Pull Request
+### 2) Non-owner fork-pr success test
 
 ```bash
-sa share docker-env --pr
+node tests/test-share-pr.js --scenario fork-pr --repo https://github.com/yuanhechen/OpenMemory --skill qa-only
 ```
 
-**Output Example:**
-```
-📤 Sharing skill: docker-env
+## Related Commands
 
-🔒 Running security scan...
-  ✅ Security scan passed
+- `sa export <skill>`: export package to local file
+- `sa import [source]`: discover/import skills
 
-🚀 Creating Pull Request to https://github.com/org/skills...
-
-📥 Cloning repository...
-🌿 Creating branch: skill/docker-env-v1.1.0
-📝 Committing changes...
-⬆️ Pushing branch...
-
-✅ Branch created and pushed!
-   Branch: skill/docker-env-v1.1.0
-   Repo: https://github.com/org/skills
-
-💡 Please create Pull Request manually in the web interface.
-   URL: https://github.com/org/skills/-/merge_requests/new?source_branch=skill/docker-env-v1.1.0
-```
-
-### 6. Specify Repository and Branch
-
-```bash
-sa share docker-env --pr --repo https://github.com/my-org/skills --branch feature/docker-skill
-```
-
-### 7. Skip Confirmation (With Security Issues)
-
-```bash
-sa share docker-env --pr --yes
-```
-
----
-
-## Sharing Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      sa share Workflow                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Step 1: Security Scan                                         │
-│  ├── Detect dangerous commands                                 │
-│  ├── Detect sensitive information                              │
-│  └── Generate security report                                  │
-│                                                                 │
-│  Step 2: Choose Sharing Method                                 │
-│  │                                                              │
-│  ├── --zip → Export as ZIP package                             │
-│  │   └── Contains skill.json, skill.md, README.md etc.         │
-│  │                                                              │
-│  ├── --registry → Publish to registry                          │
-│  │   └── Call POST /api/skills endpoint                        │
-│  │                                                              │
-│  └── --pr → Create Pull Request                                │
-│      ├── Clone target repository                               │
-│      ├── Create branch                                         │
-│      ├── Commit changes                                        │
-│      └── Push branch                                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## PR Creation Details
-
-When using `--pr` option, it automatically:
-
-1. **Clone Target Repository**
-   - Clone to temp directory `/tmp/skill-adapter-pr/<skill-name>`
-   - Use configured `skillsRepo` or URL specified by `--repo`
-
-2. **Create Branch**
-   - Branch name format: `skill/<skill-name>-v<version>`
-   - Can customize via `--branch`
-
-3. **Write Skill Files**
-   ```
-   skills/<skill-name>/
-   ├── skill.json    # Skill manifest
-   ├── skill.md      # Skill content
-   └── README.md     # Documentation
-   ```
-
-4. **Commit and Push**
-   - Commit message: `feat: Add/Update skill <name> v<version>`
-
----
-
-## Security Checks
-
-Automatic security scan before sharing:
-
-| Risk Level | Behavior |
-|------------|----------|
-| **Passed** | Continue sharing flow |
-| **Low Risk** | Show warning, can use `--yes` to continue |
-| **Medium Risk** | Show warning, requires `--yes` confirmation |
-| **High Risk** | Show warning, recommend fixing before sharing |
-
----
-
-## Test Steps
-
-1. **View shareable skills**
-   ```bash
-   sa share
-   ```
-
-2. **Export as ZIP**
-   ```bash
-   sa share <skill-name> --zip
-   ```
-
-3. **Publish to registry**
-   ```bash
-   sa share <skill-name> --registry http://localhost:3000
-   ```
-
-4. **Create PR**
-   ```bash
-   sa share <skill-name> --pr
-   ```
-
-5. **Specify repository for PR**
-   ```bash
-   sa share <skill-name> --pr --repo https://github.com/org/skills
-   ```
-
----
-
-## Notes
-
-1. **Git Credentials**: Creating PR requires configured Git credentials
-2. **Repository Permissions**: Need write permission to target repository
-3. **Security Scan**: Recommend fixing high-risk issues before sharing
-
----
-
-## Next Steps
-
-After sharing is complete, you can create a Pull Request in the repository for code review.

@@ -1,12 +1,12 @@
 /**
  * Skill Sharing Module - Main entry point
  *
- * Provides skill export/import and registry integration functionality
+ * Provides skill package export and PR sharing functionality
  */
 
 export { SkillPackageManager, skillPackageManager } from './package';
 export { SkillExporter, skillExporter } from './exporter';
-export { SkillRegistry, skillRegistry } from './registry';
+export { shareByPr, DEFAULT_PR_REPO } from './pr-share';
 
 // Re-export types
 export * from '../../types/sharing';

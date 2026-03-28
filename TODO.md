@@ -6,11 +6,11 @@
 
 ```
 Total Items: 11
-Completed: 8 (73%)
-Pending: 1
+Completed: 9 (82%)
+Pending: 0
 Broken: 2
 
-Progress: ███████████████░░░░░ 73% (Completed)
+Progress: █████████████████░░░ 82% (Completed)
 ```
 
 ## Priority
@@ -39,6 +39,7 @@ P3 = Low       (Optional, can be deferred)
 ## Changelog
 
 **2026-03-27**: `sa import` simplified flow verified (discover/recommend/local import) + local Claude Code skill name import fixed
+**2026-03-28**: `sa share --pr / --fork-pr` completed + docs/test flow finalized
 **2026-03-27**: Task added: `sa share -pr <skill-name>` create PR to `leow3lab/awesome-ascend-skills`
 **2026-03-19**: Bug: `sa import` fails on skills.sh, skill-cli & chrome-cli
 **2026-03-19**: Tested `sa init`, `sa config` ✅
@@ -69,4 +70,4 @@ P3 = Low       (Optional, can be deferred)
 | P0       | `sa import`  | ✅     | yangjing | Simplified to discover/recommend + local import only; local Claude Code skill name import verified | `npx ts-node src/cli.ts import qa-only` |
 | P0       | `sa evolve`  | ❌     |        | Bug in recommend module | `npx ts-node dist/cli.js evolve <skill>`          |
 | P1       | `sa scan`    | ❌     |        | Streaming output broken | `npx ts-node dist/cli.js scan <skill>`            |
-| P1       | `sa share -pr <skill>` | ⬜ |        | Create PR directly to `https://github.com/leow3lab/awesome-ascend-skills` | `npx ts-node dist/cli.js share -pr <skill>` |
+| P1       | `sa share --pr / --fork-pr` | ✅ | yangjing | PR flow completed for owner and non-owner(fork-pr), with guidance/docs/tests updated | `node dist/cli.js share <skill> --repo <upstream> [--fork-pr] --yes` |

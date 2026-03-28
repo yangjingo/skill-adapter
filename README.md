@@ -26,6 +26,13 @@
 npm install -g @yangjingo/skill-adapter
 ```
 
+`npm install` will now auto-check GitHub CLI (`gh`) and try to install it by default, because `sa share` auto-PR needs `gh`.
+
+- Disable auto install: `SA_AUTO_INSTALL_GH=0 npm install -g @yangjingo/skill-adapter`
+- Manual install: `npm run setup:gh`
+- Then authenticate: `gh auth login`
+- Note: system package manager install may require admin/sudo permission.
+
 ### Initialize
 
 ```bash

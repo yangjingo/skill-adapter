@@ -7,11 +7,16 @@
     "sa": "dist/cli.js"
   },
   "scripts": {
+    "postinstall": "node scripts/ensure-gh.js",
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "ts-node src/cli.ts",
+    "setup:gh": "node scripts/setup-gh.js",
     "test": "node tests/run-tests.js",
+    "test:all": "node tests/run-tests.js --with-share-pr",
     "test:cli": "node tests/test-cli.js",
+    "test:imports": "node tests/test-imports.js",
+    "test:share-pr": "node tests/test-share-pr.js",
     "test:security": "node tests/test-security.js",
     "test:versioning": "node tests/test-versioning.js",
     "test:registry": "node tests/test-registry.js"

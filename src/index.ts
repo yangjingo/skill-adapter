@@ -20,7 +20,7 @@ export { SecurityEvaluator, securityEvaluator, SecurityPatterns, PermissionValid
 export * from './types/security';
 
 // Sharing modules
-export { SkillPackageManager, skillPackageManager, SkillExporter, skillExporter, SkillRegistry, skillRegistry } from './core/sharing';
+export { SkillPackageManager, skillPackageManager, SkillExporter, skillExporter } from './core/sharing';
 export * from './types/sharing';
 
 // Discovery modules

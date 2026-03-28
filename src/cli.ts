@@ -10,12 +10,12 @@
  *
  * Import/Export:
  * - sa import [source]   Import skill / Discover hot skills (no source)
- * - sa export            Export skills from platforms (OpenClaw, Claude Code)
+ * - sa export            Export local skill package
  *
  * Manage:
  * - sa info [skill]      View skill details (no skill = list all)
  * - sa scan <file>       Security scan
- * - sa share <skill>     Export/publish skill (create PR)
+ * - sa share <skill>     Share local skill by creating PR
  *
  * Evolution:
  * - sa evolve [skill]    Run evolution analysis (shows suggestions first)
@@ -42,7 +42,7 @@ import { saAgentEvolutionEngine, SAAgentRecommendation, modelConfigLoader } from
 
 // New modules
 import { securityEvaluator } from './core/security';
-import { skillExporter, skillRegistry } from './core/sharing';
+import { skillExporter, shareByPr, DEFAULT_PR_REPO } from './core/sharing';
 import { platformFetcher, recommendationEngine, skillAnalyzer, skillsCli } from './core/discovery';
 import { RemoteSkill } from './types/discovery';
 import { versionManager } from './core/versioning';
@@ -87,22 +87,6 @@ function normalizeDiscoveryPlatform(platform: string): 'skills-sh' | 'custom' {
     return 'skills-sh';
   }
   return 'skills-sh';
-}
-
-function isGitHubRepoUrl(repoUrl: string): boolean {
-  return /github\.com[:/]/i.test(repoUrl);
-}
-
-function extractGitHubRepoSlug(repoUrl: string): string | null {
-  const normalized = repoUrl.replace(/\.git$/i, '').replace(/\/$/, '');
-
-  const httpsMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)$/i);
-  if (httpsMatch) return httpsMatch[1];
-
-  const sshMatch = normalized.match(/^git@github\.com:([^/]+\/[^/]+)$/i);
-  if (sshMatch) return sshMatch[1];
-
-  return null;
 }
 
 function parseSkillsShUrl(source: string): { pageUrl: string; githubRepo?: string; skill?: string } | null {
@@ -166,51 +150,6 @@ function buildSkillsAddCommand(repoRef: string, skillName?: string): string {
   return parts.join(' ');
 }
 
-function buildGitHubCompareUrl(repoUrl: string, branchName: string): string | null {
-  const slug = extractGitHubRepoSlug(repoUrl);
-  if (!slug) return null;
-  return `https://github.com/${slug}/compare/${encodeURIComponent(branchName)}?expand=1`;
-}
-
-function hasCommand(command: string): boolean {
-  const { spawnSync } = require('child_process');
-  const result = spawnSync(command, ['--version'], {
-    encoding: 'utf-8',
-    shell: false,
-    stdio: 'ignore'
-  });
-  return !result.error && result.status === 0;
-}
-
-function hasGitHubCli(ghBinary: string): boolean {
-  const { spawnSync } = require('child_process');
-  const result = spawnSync(ghBinary, ['--version'], {
-    encoding: 'utf-8',
-    shell: false,
-    stdio: 'ignore'
-  });
-  return !result.error && result.status === 0;
-}
-
-function isGitHubCliAuthenticated(ghBinary: string): boolean {
-  const { spawnSync } = require('child_process');
-  const result = spawnSync(ghBinary, ['auth', 'status', '--hostname', 'github.com'], {
-    encoding: 'utf-8',
-    shell: false,
-    stdio: 'ignore'
-  });
-  return !result.error && result.status === 0;
-}
-
-function runGitHubCliLogin(ghBinary: string): boolean {
-  const { spawnSync } = require('child_process');
-  const result = spawnSync(ghBinary, ['auth', 'login', '--hostname', 'github.com'], {
-    shell: false,
-    stdio: 'inherit'
-  });
-  return !result.error && result.status === 0;
-}
-
 function promptYesNo(question: string, defaultValue = true): Promise<boolean> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return Promise.resolve(false);
@@ -240,15 +179,55 @@ function getGhBinary(optionsGh?: string): string {
 }
 
 function printGitHubCliGuidance(ghBinary: string): void {
-  console.log('\n💡 GitHub PR needs `gh` (GitHub CLI).');
-  console.log('   Two ways to continue:');
-  console.log(`   1. Install or provide \`gh\`, then rerun: sa share <skill> --pr --gh ${ghBinary === 'gh' ? '<path-to-gh>' : ghBinary}`);
-  console.log('   2. If `gh` is already installed, run `gh auth login` and retry.');
-  console.log('');
-  console.log('   Install examples:');
-  console.log('   - Windows: winget install GitHub.cli');
-  console.log('   - macOS: brew install gh');
-  console.log('   - Scoop: scoop install gh');
+  console.log('\nGitHub PR auto-create is unavailable (`gh` not found).');
+  console.log('You can still push branch and open PR manually.');
+  console.log('To enable auto-create:');
+  console.log('  1) Install gh: npm run setup:gh');
+  console.log('  2) Login:      gh auth login');
+  if (ghBinary !== 'gh') {
+    console.log(`  3) Or use:     sa share <skill> --gh ${ghBinary}`);
+  }
+}
+
+function printPrRepoConfigGuidance(skillName: string, repo: string, isDefaultRepo: boolean): void {
+  console.log(`PR target: ${repo}`);
+  if (isDefaultRepo) {
+    console.log(`Default flow: sa share ${skillName}`);
+    console.log(`Need another repo? sa share ${skillName} --repo https://github.com/<org>/<repo>`);
+  }
+}
+
+function printPrFailureGuidance(skillName: string, repo: string, branchName: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.log('\nTroubleshooting suggestions:');
+
+  if (message.includes('spawnSync git ENOENT') || message.includes("spawn git ENOENT")) {
+    console.log('- Git is not available in current PATH');
+    console.log('- Install Git: https://git-scm.com/downloads');
+    console.log('- Verify: git --version');
+    console.log('- Restart terminal after installation');
+  }
+
+  if (message.includes('already exists')) {
+    console.log(`- Branch already exists: ${branchName}`);
+    console.log(`- Retry with another branch name: sa share <skill> --branch ${branchName}-retry`);
+  }
+
+  if (message.includes('Permission denied') || message.includes('Authentication failed') || message.includes('403')) {
+    console.log('- Check GitHub auth: gh auth status');
+    console.log('- Prefer GH_TOKEN + SSH for git push');
+    console.log('- Check write permission to target repository');
+    console.log('\nNext tips (if you are not owner/collaborator):');
+    console.log(`- Retry with fork PR: sa share ${skillName} --repo ${repo} --fork-pr --yes`);
+  }
+
+  if (message.includes('nothing to commit') || message.includes('no changes added to commit')) {
+    console.log('- No file changes detected against current base branch');
+    console.log('- This usually means the same skill content/version already exists in target repository');
+    console.log('- Change skill content/version, then retry');
+  }
+
+  console.log(`- Verify branch on remote: git ls-remote --heads "${repo}" "${branchName}"`);
 }
 
 function getDefaultBranch(cwd: string): string {
@@ -2013,7 +1992,7 @@ program
     }
     console.log('   sa log <skill>               # View evolution history');
     console.log('   sa summary <skill>           # View evolution metrics');
-    console.log('   sa export <skill>            # Export skill as ZIP');
+    console.log('   sa export <skill>            # Export local skill package');
     console.log('');
 
     // ═══════════════════════════════════════════
@@ -2071,26 +2050,23 @@ program
   });
 
 // ============================================
-// sa share [skill] - Unified export/publish
+// sa share [skill] - Create PR for local skill
 // ============================================
 program
   .command('share [skillName]')
-  .description('Export or publish skill')
-  .option('-o, --output <path>', 'Export to file')
-  .option('-f, --format <format>', 'Export format (json, yaml, zip)', 'zip')
-  .option('--zip', 'Export as ZIP (shorthand for -f zip)', false)
-  .option('--registry <url>', 'Publish to registry URL')
-  .option('--pr', 'Create Pull Request to skills repository', false)
-  .option('--repo <url>', 'Target git repository URL', CONFIG.skillsRepo)
+  .description('Create PR for a local skill')
+  .option('--pr', 'Create Pull Request (kept for compatibility)', false)
+  .option('--fork-pr', 'Create PR via your GitHub fork (for non-owner flow)', false)
+  .option('--repo <url>', 'Target git repository URL', DEFAULT_PR_REPO)
   .option('--branch <name>', 'Branch name for PR', '')
   .option('--gh <path>', 'Path to GitHub CLI binary', process.env.GH_CLI_PATH || 'gh')
-  .option('--yes', 'Skip confirmation', false)
-  .action(async (skillName: string | undefined, options: { output?: string; format: string; zip: boolean; registry?: string; pr: boolean; repo: string; branch: string; gh: string; yes: boolean }) => {
+  .option('--yes', 'Skip security confirmation', false)
+  .action(async (skillName: string | undefined, options: { pr: boolean; forkPr: boolean; repo: string; branch: string; gh: string; yes: boolean }) => {
     const db = new EvolutionDatabase();
 
     // No skill specified - list all skills
     if (!skillName) {
-      console.log('📤 Select a skill to share:\n');
+      console.log('Select a skill to share as PR:\n');
       const records = db.getAllRecords();
       if (records.length === 0) {
         console.log('No skills installed yet.');
@@ -2101,16 +2077,15 @@ program
       const skillNames = [...new Set(records.map(r => r.skillName))];
       for (const name of skillNames) {
         const version = db.getLatestVersion(name);
-        console.log(`  • ${name} (v${version})`);
+        console.log(`  - ${name} (v${version})`);
       }
-      console.log('\n📌 Next Steps:');
-      console.log('   sa share <skill-name>      # Share a specific skill');
-      console.log('   sa export <skill-name>     # Export skill to file');
+      console.log('\nNext Steps:');
+      console.log('   sa share <skill-name>      # Create PR');
+      console.log('   sa export <skill-name>     # Export local package');
       return;
     }
 
-    const format = options.zip ? 'zip' : options.format;
-    console.log(`📤 Sharing skill: ${skillName}\n`);
+    console.log(`Sharing skill by PR: ${skillName}\n`);
 
     const records = db.getRecords(skillName);
 
@@ -2149,429 +2124,112 @@ program
     }
 
     skillPackage.metadata.securityScan = scanResult;
-
-    // Create PR to git repository
-    if (options.pr) {
-      console.log(`\n🚀 Creating Pull Request to ${options.repo}...\n`);
-
-      const branchName = options.branch || `skill/${skillName}-v${latestRecord.version}`;
-      const tempDir = path.join(os.tmpdir(), 'skill-adapter-pr', skillName);
-      const githubRepoSlug = extractGitHubRepoSlug(options.repo);
-      const githubCompareUrl = buildGitHubCompareUrl(options.repo, branchName);
-      const ghBinary = getGhBinary(options.gh);
-      const isGitHubRepo = Boolean(githubRepoSlug);
-      let canCreateGitHubPr = false;
-
-      if (isGitHubRepo) {
-        if (!hasGitHubCli(ghBinary)) {
-          console.log(`⚠️  GitHub CLI not found: ${ghBinary}`);
-          printGitHubCliGuidance(ghBinary);
-        } else if (!isGitHubCliAuthenticated(ghBinary)) {
-          console.log(`⚠️  GitHub CLI is installed but not authenticated: ${ghBinary}`);
-          const shouldLogin = await promptYesNo('Run gh auth login now?', true);
-          if (shouldLogin) {
-            console.log('\n🔐 Starting interactive GitHub login...');
-            const loginSucceeded = runGitHubCliLogin(ghBinary);
-            if (loginSucceeded && isGitHubCliAuthenticated(ghBinary)) {
-              console.log('✅ GitHub CLI authenticated.\n');
-              canCreateGitHubPr = true;
-            } else {
-              console.log('❌ GitHub CLI login failed or was cancelled.');
-              printGitHubCliGuidance(ghBinary);
-            }
-          } else {
-            printGitHubCliGuidance(ghBinary);
-          }
-        } else {
-          canCreateGitHubPr = true;
-        }
-      }
-
-      try {
-        // Clone repository
-        console.log('📥 Cloning repository...');
-        if (!fs.existsSync(tempDir)) {
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
-        await execGit(`clone ${options.repo} ${tempDir}`, tempDir, true);
-
-        // Create branch
-        console.log(`🌿 Creating branch: ${branchName}`);
-        await execGit(`checkout -b ${branchName}`, tempDir);
-
-        // Export skill to repo
-        const skillDir = path.join(tempDir, 'skills', skillName);
-        if (!fs.existsSync(skillDir)) {
-          fs.mkdirSync(skillDir, { recursive: true });
-        }
-
-        // Write skill files
-        fs.writeFileSync(path.join(skillDir, 'skill.json'), JSON.stringify(skillPackage.manifest, null, 2));
-        fs.writeFileSync(path.join(skillDir, 'skill.md'), skillPackage.content.systemPrompt);
-        fs.writeFileSync(path.join(skillDir, 'README.md'), `# ${skillName}\n\nVersion: ${latestRecord.version}\n\nExported by Skill-Adapter`);
-
-        // Commit changes
-        console.log('📝 Committing changes...');
-        await execGit('add .', tempDir);
-        await execGit(`commit -m "feat: Add/Update skill ${skillName} v${latestRecord.version}"`, tempDir);
-
-        // Push branch
-        console.log('⬆️ Pushing branch...');
-        await execGit(`push -u origin ${branchName}`, tempDir);
-
-        if (isGitHubRepo && canCreateGitHubPr) {
-          const defaultBranch = getDefaultBranch(tempDir);
-          const title = `feat: Add/Update skill ${skillName} v${latestRecord.version}`;
-          const body = [
-            'Automated skill share from Skill-Adapter.',
-            '',
-            `- Skill: ${skillName}`,
-            `- Version: ${latestRecord.version}`,
-            `- Branch: ${branchName}`,
-            `- Repo: ${options.repo}`
-          ].join('\n');
-
-          console.log('\n🚀 Creating GitHub Pull Request...');
-          const { execFileSync } = require('child_process');
-          const prOutput = execFileSync(
-            'gh',
-            [
-              'pr',
-              'create',
-              '--repo',
-              githubRepoSlug!,
-              '--base',
-              defaultBranch,
-              '--head',
-              branchName,
-              '--title',
-              title,
-              '--body',
-              body
-            ],
-            { cwd: tempDir, encoding: 'utf-8' }
-          ).trim();
-
-          console.log('\n✅ Pull Request created!');
-          console.log(`   Repo: ${options.repo}`);
-          console.log(`   Branch: ${branchName}`);
-          if (prOutput) {
-            console.log(`   URL: ${prOutput}`);
-          } else if (githubCompareUrl) {
-            console.log(`   URL: ${githubCompareUrl}`);
-          }
-        } else if (isGitHubRepo) {
-          console.log('\n✅ Branch created and pushed!');
-          console.log(`   Branch: ${branchName}`);
-          console.log(`   Repo: ${options.repo}`);
-
-          if (githubCompareUrl) {
-            console.log('\n💡 GitHub PR link if you want to open it manually:');
-            console.log(`   URL: ${githubCompareUrl}`);
-          }
-        } else {
-          console.log('\n✅ Branch created and pushed!');
-          console.log(`   Branch: ${branchName}`);
-          console.log(`   Repo: ${options.repo}`);
-
-          console.log('\n💡 Please create Pull Request manually in the web interface.');
-          console.log(`   URL: ${options.repo}/-/merge_requests/new?source_branch=${branchName}`);
-        }
-
-      } catch (error) {
-        console.error(`❌ PR creation failed: ${error}`);
-        console.log('\n💡 Make sure you have git credentials configured for the repository.');
-      }
-      return;
-    }
-
-    if (options.registry) {
-      // Publish to registry
-      console.log(`\n🚀 Publishing to ${options.registry}...`);
-
-      try {
-        const result = await skillRegistry.publish(skillPackage, 'custom');
-        console.log(`✅ Published successfully!`);
-        console.log(`   URL: ${result.url}`);
-        console.log(`   Version: ${result.version}`);
-      } catch (error) {
-        console.error(`❌ Publish failed: ${error}`);
-      }
-    } else {
-      // Export to file
-      const ext = format === 'zip' ? 'zip' : format;
-      const outputPath = options.output || `./${skillName}-v${latestRecord.version}.${ext}`;
-
-      console.log(`\n📦 Exporting to ${outputPath}...`);
-
-      skillExporter.exportToFile(skillPackage, outputPath, {
-        format: format as 'json' | 'yaml' | 'zip',
-        includePatches: true,
-        includeConstraints: true,
-        includeSecurityScan: true,
-        includeReadme: true
-      });
-
-      console.log('✅ Export complete!');
-      console.log(`   File: ${outputPath}`);
+    const shareOk = await shareByPr({
+      skillName,
+      version: latestRecord.version,
+      skillPackage,
+      repo: options.repo,
+      branch: options.branch,
+      ghBinary: options.gh,
+      forkPr: options.forkPr,
+      promptYesNo
+    });
+    if (!shareOk) {
+      process.exitCode = 1;
     }
   });
 
+// ============================================
+// sa export [skill] - Export local skill package
+// ============================================
+program
+  .command('export [skillName]')
+  .description('Export local skill package')
+  .option('-o, --output <path>', 'Export to file')
+  .option('-f, --format <format>', 'Export format (json, yaml, zip)', 'zip')
+  .option('--zip', 'Export as ZIP (shorthand for -f zip)', false)
+  .option('--yes', 'Skip security confirmation', false)
+  .action(async (skillName: string | undefined, options: { output?: string; format: string; zip: boolean; yes: boolean }) => {
+    const db = new EvolutionDatabase();
+
+    if (!skillName) {
+      console.log('Select a local skill to export:\n');
+      const records = db.getAllRecords();
+      if (records.length === 0) {
+        console.log('No skills installed yet.');
+        console.log('Use `sa import <source>` to import a skill.');
+        return;
+      }
+
+      const skillNames = [...new Set(records.map(r => r.skillName))];
+      for (const name of skillNames) {
+        const version = db.getLatestVersion(name);
+        console.log(`  - ${name} (v${version})`);
+      }
+      console.log('\nNext Steps:');
+      console.log('   sa export <skill-name>            # Export local package');
+      console.log('   sa export <skill-name> --zip      # Export ZIP');
+      console.log('   sa share <skill-name>             # Create PR');
+      return;
+    }
+
+    const records = db.getRecords(skillName);
+    if (records.length === 0) {
+      console.log(`Skill "${skillName}" not found.`);
+      return;
+    }
+
+    const latestRecord = records[records.length - 1];
+    const format = options.zip ? 'zip' : options.format;
+
+    const skillPackage = skillExporter.createPackage(
+      skillName,
+      { systemPrompt: `# ${skillName}\n\nSkill content` },
+      { version: latestRecord.version }
+    );
+
+    console.log('🔒 Running security scan...');
+    const scanResult = securityEvaluator.scan(skillPackage.content.systemPrompt, skillName);
+    if (!scanResult.passed) {
+      console.log('⚠ Security issues detected:');
+      console.log(`  Risk: ${scanResult.riskAssessment.overallRisk}`);
+      console.log(`  Issues: ${scanResult.sensitiveInfoFindings.length + scanResult.dangerousOperationFindings.length}`);
+      if (!options.yes) {
+        console.log('\n  Use --yes to proceed anyway.');
+        return;
+      }
+    } else {
+      console.log('  ✅ Security scan passed');
+    }
+    skillPackage.metadata.securityScan = scanResult;
+
+    const ext = format === 'zip' ? 'zip' : format;
+    const outputPath = options.output || `./${skillName}-v${latestRecord.version}.${ext}`;
+    console.log(`\n📦 Exporting to ${outputPath}...`);
+
+    skillExporter.exportToFile(skillPackage, outputPath, {
+      format: format as 'json' | 'yaml' | 'zip',
+      includePatches: true,
+      includeConstraints: true,
+      includeSecurityScan: true,
+      includeReadme: true
+    });
+
+    console.log('✅ Export complete!');
+    console.log(`   File: ${outputPath}`);
+  });
+
 // Helper function to execute git commands
-async function execGit(command: string, cwd: string, ignoreError = false): Promise<string> {
-  const { execSync } = require('child_process');
+async function execGit(args: string[], cwd: string, ignoreError = false): Promise<string> {
+  const { execFileSync } = require('child_process');
   try {
-    return execSync(`git ${command}`, { cwd, encoding: 'utf-8', stdio: ignoreError ? 'pipe' : 'inherit' });
+    return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ignoreError ? 'pipe' : 'inherit' });
   } catch (error) {
     if (!ignoreError) throw error;
     return '';
   }
 }
 
-// ============================================
-// sa export [skill] - Export skills from platforms
-// ============================================
-program
-  .command('export [skillName]')
-  .description('Export from platforms')
-  .option('-p, --platform <platform>', 'Platform to export from (imported, openclaw, claudecode, all)', 'all')
-  .option('-o, --output <dir>', 'Output directory', './exported-skills')
-  .option('-f, --format <format>', 'Export format (zip, json)', 'zip')
-  .action((skillName: string | undefined, options: { platform: string; output: string; format: string }) => {
-    const db = new EvolutionDatabase();
-    const targetSkill = skillName ? skillName : 'all skills';
-    const absoluteOutput = path.resolve(options.output);
-
-    console.log(`📦 Exporting ${targetSkill} from ${options.platform}...\n`);
-
-    const platforms = options.platform === 'all'
-      ? ['imported', 'openclaw', 'claudecode']
-      : [options.platform];
-
-    let totalExported = 0;
-    const exportedFiles: string[] = [];
-
-    for (const platform of platforms) {
-      console.log(`\n── ${platform.toUpperCase()} ──`);
-
-      if (platform === 'imported') {
-        // Export from database (imported skills)
-        try {
-          let skills: string[] = [];
-
-          if (skillName) {
-            const records = db.getRecords(skillName);
-            if (records.length > 0) {
-              skills = [skillName];
-            } else {
-              console.log(`  ⚠ Skill "${skillName}" not found in imported list`);
-            }
-          } else {
-            const allRecords = db.getAllRecords();
-            skills = [...new Set(allRecords.map(r => r.skillName))];
-          }
-
-          if (skills.length === 0) {
-            console.log('  ⚠ No imported skills');
-            continue;
-          }
-
-          const outputDir = path.join(absoluteOutput, 'imported');
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-          }
-
-          for (const skill of skills) {
-            const records = db.getRecords(skill);
-            if (records.length === 0) continue;
-
-            // Get skill content from OpenClaw if available
-            const latestRecord = records[records.length - 1];
-            let systemPrompt = `# ${skill}\n\nExported from Skill-Adapter`;
-
-            // Try to get content from OpenClaw
-            if (latestRecord.importSource?.startsWith('OpenClaw:')) {
-              const originalDir = latestRecord.importSource.split(':')[1] || skill;
-              const openClawPath = findOpenClawSkillsPath();
-              if (openClawPath) {
-                const skillMdPath = path.join(openClawPath, originalDir, 'SKILL.md');
-                if (fs.existsSync(skillMdPath)) {
-                  systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
-                }
-              }
-            }
-
-            const outputPath = path.join(outputDir, `${skill}.zip`);
-            const skillPackage = skillExporter.createPackage(
-              skill,
-              { systemPrompt },
-              { version: latestRecord.version, author: 'imported' }
-            );
-            skillExporter.exportToFile(skillPackage, outputPath, {
-              format: options.format as 'zip' | 'json',
-              includeReadme: true
-            });
-            console.log(`  ✓ ${skill}`);
-            exportedFiles.push(outputPath);
-            totalExported++;
-          }
-        } catch (error) {
-          console.error(`  ❌ Export failed: ${error}`);
-        }
-      } else if (platform === 'openclaw') {
-        try {
-          const openClawPath = findOpenClawSkillsPath();
-          if (!openClawPath) {
-            console.log('  ⚠ OpenClaw skills folder not found');
-            continue;
-          }
-
-          let skills = fs.readdirSync(openClawPath).filter(f => {
-            return fs.statSync(path.join(openClawPath, f)).isDirectory();
-          });
-
-          // Filter by skill name if specified
-          if (skillName) {
-            skills = skills.filter(s => s === skillName);
-            if (skills.length === 0) {
-              console.log(`  ⚠ Skill "${skillName}" not found in OpenClaw`);
-              continue;
-            }
-          }
-
-          const outputDir = path.join(absoluteOutput, 'openclaw');
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-          }
-
-          for (const skill of skills) {
-            const skillPath = path.join(openClawPath, skill);
-            const outputPath = path.join(outputDir, `${skill}.zip`);
-            try {
-              skillExporter.exportOpenClawSkill(skillPath, outputPath);
-              console.log(`  ✓ ${skill}`);
-              exportedFiles.push(outputPath);
-              totalExported++;
-            } catch (err) {
-              console.log(`  ✗ ${skill}: ${err}`);
-            }
-          }
-        } catch (error) {
-          console.error(`  ❌ Export failed: ${error}`);
-        }
-      } else if (platform === 'claudecode') {
-        try {
-          const claudeCodePath = findClaudeCodeSkillsPath();
-          if (!claudeCodePath) {
-            console.log('  ⚠ Claude Code skills folder not found');
-            continue;
-          }
-
-          // Export Claude Code skills (commands/skills directories)
-          const outputDir = path.join(absoluteOutput, 'claudecode');
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-          }
-
-          // Check for .claude/commands
-          const commandsPath = path.join(claudeCodePath, 'commands');
-          if (fs.existsSync(commandsPath)) {
-            let commands = fs.readdirSync(commandsPath).filter(f => f.endsWith('.md'));
-
-            // Filter by skill name if specified
-            if (skillName) {
-              commands = commands.filter(c => c.replace('.md', '') === skillName);
-            }
-
-            for (const cmd of commands) {
-              const cmdPath = path.join(commandsPath, cmd);
-              const name = cmd.replace('.md', '');
-              const outputPath = path.join(outputDir, `${name}.zip`);
-
-              const content = fs.readFileSync(cmdPath, 'utf-8');
-              const pkg = skillExporter.createPackage(
-                name,
-                { systemPrompt: content },
-                { version: '1.0.0', author: 'claude-code' }
-              );
-              skillExporter.exportToFile(pkg, outputPath, {
-                format: options.format as 'zip' | 'json',
-                includeReadme: true
-              });
-              console.log(`  ✓ ${name}`);
-              exportedFiles.push(outputPath);
-              totalExported++;
-            }
-          }
-
-          // Check for .claude/skills
-          const skillsPath = path.join(claudeCodePath, 'skills');
-          if (fs.existsSync(skillsPath)) {
-            let skillDirs = fs.readdirSync(skillsPath).filter(f => {
-              return fs.statSync(path.join(skillsPath, f)).isDirectory();
-            });
-
-            // Filter by skill name if specified
-            if (skillName) {
-              skillDirs = skillDirs.filter(s => s === skillName);
-            }
-
-            for (const skillDir of skillDirs) {
-              const skillPath = path.join(skillsPath, skillDir);
-              const skillMdPath = path.join(skillPath, 'skill.md');
-              const skillJsonPath = path.join(skillPath, 'skill.json');
-
-              let systemPrompt = '';
-              let manifest: Record<string, unknown> = { name: skillDir, version: '1.0.0' };
-
-              if (fs.existsSync(skillMdPath)) {
-                systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
-              }
-              if (fs.existsSync(skillJsonPath)) {
-                manifest = JSON.parse(fs.readFileSync(skillJsonPath, 'utf-8'));
-              }
-
-              const outputPath = path.join(outputDir, `${skillDir}.zip`);
-              const skillPackage = skillExporter.createPackage(
-                manifest.name as string || skillDir,
-                { systemPrompt },
-                manifest as Record<string, unknown>
-              );
-              skillExporter.exportToFile(skillPackage, outputPath, {
-                format: options.format as 'zip' | 'json',
-                includeReadme: true
-              });
-              console.log(`  ✓ ${skillDir}`);
-              exportedFiles.push(outputPath);
-              totalExported++;
-            }
-          }
-        } catch (error) {
-          console.error(`  ❌ Export failed: ${error}`);
-        }
-      }
-    }
-
-    // Show results
-    if (totalExported === 0) {
-      console.log(`\n❌ Export failed: No skills found to export`);
-      console.log('\n📌 Suggestions:');
-      console.log('   sa info              # View imported skills');
-      console.log('   sa import <skill>    # Import a skill first');
-    } else {
-      console.log(`\n✅ Successfully exported ${totalExported} skill(s)`);
-      console.log(`\n📁 Output directory: ${absoluteOutput}`);
-      if (exportedFiles.length > 0) {
-        console.log('\n📄 Exported files:');
-        for (const file of exportedFiles) {
-          console.log(`   ${file}`);
-        }
-      }
-      console.log('\n📌 Next Steps:');
-      console.log('   # Open export directory in file manager');
-      console.log(`   explorer ${absoluteOutput}`);
-    }
-  });
 
 // Helper functions for finding platform paths
 
@@ -3007,8 +2665,8 @@ program
 
     console.log('\n📌 Next Steps:');
     console.log(`   sa log ${skillName}          # View detailed changes`);
-    console.log(`   sa share ${skillName}        # Export/publish skill`);
-    console.log(`   sa export ${skillName}       # Export to file`);
+    console.log(`   sa share ${skillName}        # Create PR`);
+    console.log(`   sa export ${skillName}       # Export local package`);
   });
 
 // ============================================
@@ -3667,4 +3325,5 @@ if (process.argv.length === 2) {
 }
 
 program.parse(normalizeCliArgs(process.argv));
+
 
