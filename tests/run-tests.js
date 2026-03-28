@@ -5,6 +5,7 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const NODE_BIN = process.env.NODE_BINARY || 'node';
 
 let passed = 0;
 let failed = 0;
@@ -26,7 +27,7 @@ function assert(condition, message) {
 }
 
 function runCli(args) {
-  return execFileSync(process.execPath, ['dist/cli.js', ...args], {
+  return execFileSync(NODE_BIN, ['dist/cli.js', ...args], {
     encoding: 'utf-8',
     cwd: path.join(__dirname, '..'),
     shell: false,
@@ -34,7 +35,7 @@ function runCli(args) {
 }
 
 function runNodeScript(args) {
-  return execFileSync(process.execPath, args, {
+  return execFileSync(NODE_BIN, args, {
     encoding: 'utf-8',
     cwd: path.join(__dirname, '..'),
     shell: false,
@@ -85,10 +86,14 @@ test('Core modules should be compiled', () => {
   }
 });
 
-// Optional integration: share/fork-pr workflow
-const runSharePrIntegration =
-  process.env.RUN_SHARE_PR_TESTS === '1' ||
-  process.argv.includes('--with-share-pr');
+// Integration: share/fork-pr workflow (enabled by default for full runs)
+const runSharePrIntegration = process.env.SKIP_SHARE_PR_TESTS !== '1';
+
+// Test 7: scan command e2e
+test('scan command e2e should pass', () => {
+  const output = runNodeScript(['tests/test-scan-cli.js']);
+  assert(output.includes('PASS(scan):'), 'scan e2e scenario did not pass');
+});
 
 if (runSharePrIntegration) {
   test('share/fork-pr integration should pass', () => {
@@ -97,7 +102,7 @@ if (runSharePrIntegration) {
     assert(output.includes('PASS(fork-pr):'), 'fork-pr scenario did not pass');
   });
 } else {
-  console.log('- Skipped: share/fork-pr integration (set RUN_SHARE_PR_TESTS=1 or --with-share-pr)');
+  console.log('- Skipped: share/fork-pr integration (set SKIP_SHARE_PR_TESTS=1 to skip)');
 }
 
 console.log('\n=== Results ===');
