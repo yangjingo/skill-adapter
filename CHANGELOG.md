@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `sa import` remote flow no longer depends on the `skills` package runtime.
 - Remote input now enters recommendation-only mode (search + trending + manual install hint).
+- Refactored `sa summary` logic into `src/core/summary.ts` to keep CLI handlers thinner and improve reuse.
 - Added community guidance links in CLI output:
   - https://github.com/leow3lab/ascend-skills
   - https://github.com/leow3lab/awesome-ascend-skills
