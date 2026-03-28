@@ -11,6 +11,7 @@ export { SessionAnalyzer, SessionLog, ToolCallRecord, CorrectionRecord, Analysis
 export { SkillPatcher, skillPatcher, SkillPatch, SkillVersion } from './core/patcher';
 export { Evaluator, evaluator, EvaluationResult, MetricComparison } from './core/evaluator';
 export { EvolutionDatabase, EvolutionRecord } from './core/database';
+export { renderEvolutionSummary, SummaryRenderResult } from './core/summary';
 
 // Report modules
 export { SummaryGenerator, summaryGenerator } from './report/summary';

@@ -33,7 +33,7 @@ import { createWriteStream } from 'fs';
 import ora from 'ora';
 
 // Core modules
-import { telemetry, WorkspaceAnalyzer, SessionAnalyzer, skillPatcher, EvolutionDatabase, EvolutionRecord, summaryGenerator, VERSION } from './index';
+import { telemetry, WorkspaceAnalyzer, SessionAnalyzer, skillPatcher, EvolutionDatabase, EvolutionRecord, VERSION } from './index';
 
 // Evolution Engine
 import { EvolutionEngine, evolutionEngine, EvolutionRecommendation } from './core/evolution-engine';
@@ -49,6 +49,7 @@ import { RemoteSkill } from './types/discovery';
 import { versionManager } from './core/versioning';
 import { agentDetector } from './core/config';
 import { configManager, UserPreferences } from './core/config-manager';
+import { renderEvolutionSummary } from './core/summary';
 import {
   loadTrackedSkill,
   analyzeSkillStaticContent,
@@ -2121,158 +2122,18 @@ program
   .action((skillName: string) => {
     const db = new EvolutionDatabase();
     const records = db.getRecords(skillName);
+    const summary = renderEvolutionSummary(skillName, records);
 
-    if (records.length === 0) {
+    if (summary.status === 'not-found') {
       console.log(`❌ No evolution records found for "${skillName}"\n`);
-      console.log('📌 Next Steps:');
+      console.log('💡 Next Steps:');
       console.log(`   sa evolve ${skillName}    # Run evolution analysis first`);
       return;
     }
 
-    // Sort by timestamp ascending (oldest first)
-    const sorted = [...records].sort((a, b) =>
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-
-    const baseline = sorted[0];
-    const latest = sorted[sorted.length - 1];
-
-    console.log(`📊 Evolution Summary: ${skillName}\n`);
-
-    // Extract metrics from telemetry data
-    const extractTelemetryMetrics = (record: EvolutionRecord) => {
-      try {
-        const t = JSON.parse(record.telemetryData || '{}');
-        return {
-          optimizations: t.optimizationsCount || 0,
-          applied: t.appliedCount || 0,
-          skipped: t.skippedCount || 0,
-          soulLoaded: t.soulLoaded || false,
-          memoryLoaded: t.memoryLoaded || false,
-          languages: t.workspaceAnalysis?.languages || [],
-          packageManager: t.workspaceAnalysis?.packageManager || '-',
-          avgUserRounds: t.avgUserRounds || 0,
-          avgToolCalls: t.avgToolCalls || 0,
-          totalTokenInput: t.totalTokenInput || 0,
-          totalTokenOutput: t.totalTokenOutput || 0,
-          avgContextLoad: t.avgContextLoad || 0,
-        };
-      } catch {
-        return null;
-      }
-    };
-
-    // Extract applied changes from patches
-    const extractAppliedChanges = (record: EvolutionRecord) => {
-      try {
-        const patches = JSON.parse(record.patches || '[]');
-        const changes: { style: string[]; errors: string[]; env: string[]; learning: string[] } = {
-          style: [], errors: [], env: [], learning: []
-        };
-        for (const p of patches) {
-          const cat = p.category || p.type || '';
-          const details = p.details || [];
-          if (cat.includes('Style') || cat.includes('风格')) {
-            changes.style.push(...details);
-          } else if (cat.includes('Error') || cat.includes('错误')) {
-            changes.errors.push(...details);
-          } else if (cat.includes('Environment') || cat.includes('环境')) {
-            changes.env.push(...details);
-          }
-        }
-        return changes;
-      } catch {
-        return { style: [], errors: [], env: [], learning: [] };
-      }
-    };
-
-    const baseMetrics = extractTelemetryMetrics(baseline);
-    const latestMetrics = extractTelemetryMetrics(latest);
-
-    // Aggregate all changes across all records
-    const allChanges = { style: [] as string[], errors: [] as string[], env: [] as string[] };
-    for (const rec of sorted) {
-      const changes = extractAppliedChanges(rec);
-      allChanges.style.push(...changes.style);
-      allChanges.errors.push(...changes.errors);
-      allChanges.env.push(...changes.env);
+    for (const line of summary.lines) {
+      console.log(line);
     }
-    // Deduplicate
-    allChanges.style = [...new Set(allChanges.style)];
-    allChanges.errors = [...new Set(allChanges.errors)];
-    allChanges.env = [...new Set(allChanges.env)];
-
-    // Show metrics comparison table
-    const vBase = baseline.version.padEnd(5);
-    const vLatest = latest.version.padEnd(5);
-    console.log('┌─────────────────────┬─────────────────┬─────────────────┬──────────┬──────────────────┐');
-    console.log(`│ Metric              │ Baseline (v${vBase})│ Evolved (v${vLatest})│ Change   │ Status           │`);
-    console.log('├─────────────────────┼─────────────────┼─────────────────┼──────────┼──────────────────┤');
-
-    // Helper to format row
-    const formatRow = (name: string, base: number, evolved: number, statusFn: (delta: number) => string) => {
-      const delta = base === 0 ? (evolved > 0 ? 100 : 0) : ((evolved - base) / base) * 100;
-      const deltaStr = delta === 0 ? '-' : (delta > 0 ? `+${delta.toFixed(0)}%` : `${delta.toFixed(0)}%`);
-      const status = statusFn(delta);
-      const namePad = name.padEnd(19);
-      const baseStr = String(base).padStart(15);
-      const evolvedStr = String(evolved).padStart(15);
-      const deltaPad = deltaStr.padStart(8);
-      const statusPad = status.padEnd(16);
-      console.log(`│ ${namePad} │ ${baseStr} │ ${evolvedStr} │ ${deltaPad} │ ${statusPad} │`);
-    };
-
-    // Status helpers
-    const goodStatus = (delta: number) => delta < -10 ? '✅ Optimized' : delta > 10 ? '⚠️ Increased' : '➖ Stable';
-    const countStatus = (delta: number) => delta > 0 ? '✅ Enhanced' : delta < 0 ? '⚠️ Reduced' : '➖ Stable';
-
-    // Show metrics rows
-    formatRow('Optimizations', baseMetrics?.optimizations || 0, latestMetrics?.optimizations || 0, countStatus);
-    formatRow('Applied Patches', baseMetrics?.applied || 0, latestMetrics?.applied || 0, countStatus);
-    formatRow('Style Rules', 0, allChanges.style.length, countStatus);
-    formatRow('Error Avoidances', 0, allChanges.errors.length, countStatus);
-    formatRow('Env Adaptations', 0, allChanges.env.length, countStatus);
-
-    console.log('└─────────────────────┴─────────────────┴─────────────────┴──────────┴──────────────────┘');
-
-    // Workspace context
-    if (latestMetrics?.languages?.length) {
-      console.log(`\n📁 Workspace: ${latestMetrics.languages.join(', ')} | ${latestMetrics.packageManager}`);
-    }
-
-    // Context loaded
-    const ctxLoaded = [];
-    if (latestMetrics?.soulLoaded) ctxLoaded.push('SOUL.md');
-    if (latestMetrics?.memoryLoaded) ctxLoaded.push('MEMORY.md');
-    if (ctxLoaded.length > 0) {
-      console.log(`📚 Context: ${ctxLoaded.join(', ')}`);
-    }
-
-    // Generate conclusion
-    const totalApplied = allChanges.style.length + allChanges.errors.length + allChanges.env.length;
-    const totalSkipped = (latestMetrics?.skipped || 0);
-
-    console.log('\n📝 Conclusion:');
-    if (totalApplied > 0) {
-      const parts: string[] = [];
-      if (allChanges.style.length > 0) parts.push(`${allChanges.style.length} style rules`);
-      if (allChanges.errors.length > 0) parts.push(`${allChanges.errors.length} error avoidances`);
-      if (allChanges.env.length > 0) parts.push(`${allChanges.env.length} environment adaptations`);
-
-      console.log(`   ✅ Evolution applied: ${parts.join(', ')}.`);
-      if (totalSkipped > 0) {
-        console.log(`   ℹ️  ${totalSkipped} optimization(s) skipped (cross-skill learning available).`);
-      }
-      console.log(`   📈 Version progressed from v${baseline.version} to v${latest.version} across ${records.length} evolution(s).`);
-    } else {
-      console.log('   ➖ No significant changes applied in recent evolutions.');
-      console.log('   💡 Run `sa evolve <skill>` to analyze and apply new optimizations.');
-    }
-
-    console.log('\n📌 Next Steps:');
-    console.log(`   sa log ${skillName}          # View detailed changes`);
-    console.log(`   sa share ${skillName}        # Create PR`);
-    console.log(`   sa export ${skillName}       # Export local package`);
   });
 
 // ============================================
