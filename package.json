@@ -1,6 +1,6 @@
 {
   "name": "@yangjingo/skill-adapter",
-  "version": "0.1.3",
+  "version": "0.1.3-patch.1",
   "description": "Making Skills Evolve within your Workspace - A evolution management layer for Claude Code and OpenClaw",
   "main": "dist/index.js",
   "bin": {
@@ -36,6 +36,7 @@
   "license": "MIT",
   "files": [
     "dist",
+    "scripts",
     "README.md",
     "LICENSE"
   ],
