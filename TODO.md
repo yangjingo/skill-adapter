@@ -38,6 +38,9 @@ P3 = Low       (Optional, can be deferred)
 ## Changelog
 
 **2026-03-28**: Added CLI-to-core refactor backlog (`import`/`evolve`/`info`/`log`/`list`) for next phase.
+**2026-04-08**: Marked `sa evolve` live Ink refresh and evidence-first filtering as "功能完成，待验证"; default agent loop set to 3 rounds.
+**2026-04-08**: Added evidence-first evolve flow: keyword/grep/agent-loop session filtering before recommendation generation, with 3-round loop default.
+**2026-04-08**: Clarified `sa evolve` docs: live Ink refresh is for terminal progress only; `--apply` remains the explicit write-back switch.
 **2026-03-28**: TODO updated: added `sa scan --repair` / `sa scan --repair --apply` and `sa list` coverage entries.
 **2026-03-28**: User completed `sa scan` CLI test flow; `sa scan` status updated to Completed and removed from Open Issues.
 **2026-03-28**: `sa summary` refactor completed (logic moved into `src/core/summary.ts`), and user verified CLI output after rebuild.
@@ -90,6 +93,8 @@ P3 = Low       (Optional, can be deferred)
 | P1 | `sa evolve` command handler extraction | 🔄 Pending | Move evolve pipeline/apply/record flow to `src/core/evolution/*` command service | Keep CLI as orchestration |
 | P2 | `sa info` + `sa list` unification | 🔄 Pending | Reuse shared listing/detail service in `src/core/discovery/*` | Remove duplicated directory scan logic |
 | P2 | `sa log` summary service extraction | 🔄 Pending | Move telemetry/patch rendering to `src/core/log/*` | Standardize output + testability |
+| P1 | `sa evolve` live Ink refresh | 功能完成，待验证 | Replace spinner-heavy output with live progress, streaming status, and preview panels | Keep `--apply` as explicit side-effect flag |
+| P1 | `sa evolve` evidence-first filtering | 功能完成，待验证 | Filter sessions by keyword / bash grep / rg / agent-loop signals before model calls | Improve signal-to-noise for recommendations |
 | P3 | `sa config` action handler extraction | 🔄 Pending | Move get/set/reset validation to `src/core/config/*` | Thin CLI action layer |
 
 
