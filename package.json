@@ -6,21 +6,22 @@
   "bin": {
     "sa": "dist/cli.js"
   },
+  "packageManager": "bun@1.3.11",
   "scripts": {
-    "postinstall": "node scripts/ensure-gh.js",
+    "postinstall": "bun scripts/ensure-gh.js || node scripts/ensure-gh.js",
     "build": "tsc",
-    "start": "node dist/cli.js",
-    "dev": "ts-node src/cli.ts",
-    "slides": "node scripts/slides.js",
-    "setup:gh": "node scripts/setup-gh.js",
-    "test": "node tests/run-tests.js",
-    "test:all": "node tests/run-tests.js --with-share-pr",
-    "test:cli": "node tests/test-cli.js",
-    "test:imports": "node tests/test-imports.js",
-    "test:share-pr": "node tests/test-share-pr.js",
-    "test:security": "node tests/test-security.js",
-    "test:versioning": "node tests/test-versioning.js",
-    "test:registry": "node tests/test-registry.js"
+    "start": "bun dist/cli.js || node dist/cli.js",
+    "dev": "bun src/cli.ts || ts-node src/cli.ts",
+    "slides": "bun scripts/slides.js || node scripts/slides.js",
+    "setup:gh": "bun scripts/setup-gh.js || node scripts/setup-gh.js",
+    "test": "bun tests/run-tests.js || node tests/run-tests.js",
+    "test:all": "bun tests/run-tests.js --with-share-pr || node tests/run-tests.js --with-share-pr",
+    "test:cli": "bun tests/test-scan-cli.js || node tests/test-scan-cli.js",
+    "test:imports": "bun tests/test-imports.js || node tests/test-imports.js",
+    "test:share-pr": "bun tests/test-share-pr.js || node tests/test-share-pr.js",
+    "test:security": "bun tests/test-security.js || node tests/test-security.js",
+    "test:versioning": "bun tests/test-versioning.js || node tests/test-versioning.js",
+    "test:registry": "bun tests/test-registry.js || node tests/test-registry.js"
   },
   "keywords": [
     "claude-code",
@@ -52,8 +53,10 @@
     "@anthropic-ai/sdk": "^0.79.0",
     "archiver": "^7.0.0",
     "commander": "^12.0.0",
+    "ink": "^6.8.0",
     "js-yaml": "^4.1.0",
     "ora": "^9.3.0",
+    "react": "^19.2.4",
     "skills": "^1.4.5"
   }
 }
