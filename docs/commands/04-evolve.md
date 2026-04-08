@@ -5,8 +5,11 @@
 `sa evolve` is the core command of Skill-Adapter, used for:
 - Loading and analyzing tracked skills
 - Analyzing skill compatibility with current work environment
+- Extracting session evidence with keyword, grep, and agent-loop signals
+- Running a multi-round evidence loop to rescore and refine high-signal sessions
 - Generating optimization recommendations
-- Applying high-confidence recommendations (`--apply`)
+- Showing live progress in terminals that support Ink
+- Applying high-confidence recommendations when `--apply` is set
 - Tracking evolution history
 
 ---
@@ -38,11 +41,14 @@ sa evolve <skillName> [options]
 - Short summary only
 - Recommendation count by priority
 - Clear next-step commands
+- Live progress indicators when the terminal supports Ink
 
 ### Verbose (`--verbose`)
 - Full analysis details (static/content/context)
+- Session evidence summary: keyword hits, grep hits, loop signals, and high-signal highlights
 - Streaming thinking output (when AI model is available)
 - Full recommendation cards with suggested content preview
+- Live status updates during long-running analysis
 
 ---
 
@@ -86,9 +92,12 @@ sa evolve docker-env --verbose --apply
 2. Load tracked skill from local evolution database
 3. Show SA configuration and connection status
 4. Analyze skill content and workspace context
-5. Generate recommendations (AI-first, rule-based fallback)
-6. Show concise summary (or detailed output with `--verbose`)
-7. If `--apply` is set, apply high-confidence recommendations and save history
+5. Build session evidence from Claude Code and OpenClaw sessions
+6. Run a multi-round evidence loop to score, expand, and rescore high-value sessions
+7. Generate recommendations from the reduced evidence set (AI-first, rule-based fallback)
+8. Show concise summary (or detailed output with `--verbose`)
+9. If `--apply` is set, apply high-confidence recommendations and save history
+10. If the terminal supports it, keep the progress UI in sync via Ink instead of repainting with plain logs
 
 ## CLI Validation
 

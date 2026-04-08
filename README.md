@@ -15,6 +15,8 @@
 * **Evaluation-Based:** All improvements prove their value through quantifiable metrics.
 * **Security-First:** Built-in security scanning for safe skill usage and sharing.
 * **Share-Ready:** Export, import, and publish skills to registries easily.
+* **Live Progress:** sa evolve uses a live Ink dashboard for long-running analysis when the terminal supports it, and falls back to plain text otherwise.
+* **Evidence-First Evolution:** sa evolve runs a multi-round evidence loop over session history with keyword, grep, and agent-loop signals before generating recommendations.
 
 ---
 
@@ -67,6 +69,8 @@ sa info -p claudecode
 sa evolve docker-env
 sa evolve docker-env --apply
 
+# `sa evolve` shows live progress in TTY terminals. `--apply` still controls whether recommendations are written back.
+
 # View evolution metrics
 sa summary docker-env
 
@@ -90,7 +94,7 @@ sa export docker-env         # Export specific skill
 | `sa init` | Initialize configuration |
 | `sa import [source]` | Import or discover skills |
 | `sa info [skill]` | View skill info (default: all platforms) |
-| `sa evolve <skill>` | Run evolution analysis |
+| `sa evolve <skill>` | Run evolution analysis with live progress |
 | `sa share [skill]` | Export or publish skill |
 | `sa export [skill]` | Export from platforms |
 | `sa scan [file]` | Security scan |
@@ -272,5 +276,6 @@ This project references and appreciates the following open-source ecosystems:
 ## License
 
 MIT
+
 
 

@@ -423,3 +423,45 @@ export interface ClaudeCodeSessionFileInfo {
   modifiedTime: Date;
   size: number;
 }
+
+export interface SessionEvidenceBundle {
+  claudeCodeSessions: ClaudeCodeExtractedSession[];
+  openClawSessions: ExtractedSession[];
+  summary: SessionEvidenceSummary;
+  highlights: SessionEvidenceHighlight[];
+  loopInsights: SessionLoopInsight[];
+  keywords: string[];
+  grepTerms: string[];
+}
+
+export interface SessionEvidenceSummary {
+  scannedSessions: number;
+  relevantSessions: number;
+  skillMatches: number;
+  keywordMatches: number;
+  grepMatches: number;
+  loopSignals: number;
+  topKeywords: Array<{ term: string; count: number }>;
+  topGrepTerms: Array<{ term: string; count: number }>;
+  topErrors: Array<{ message: string; count: number }>;
+  topTools: Array<{ name: string; count: number }>;
+}
+
+export interface SessionEvidenceHighlight {
+  source: 'claude_code' | 'openclaw';
+  sessionId: string;
+  timestamp?: Date;
+  score: number;
+  reason: string;
+  excerpt: string;
+  matchedKeywords: string[];
+  matchedGrepTerms: string[];
+  loopSignals: string[];
+}
+
+export interface SessionLoopInsight {
+  label: string;
+  description: string;
+  frequency: number;
+  sessionIds: string[];
+}

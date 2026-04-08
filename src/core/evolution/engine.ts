@@ -5,6 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { modelConfigLoader } from '../model-config-loader';
 import { buildEvolutionPrompt, buildSummaryPrompt } from './prompts';
+import type { SessionEvidenceContext } from './prompts';
 
 /**
  * SA Agent-generated recommendation
@@ -45,6 +46,21 @@ export interface StreamCallbacks {
   onThinking?: (text: string) => void;
   onContent?: (text: string) => void;
   onComplete?: () => void;
+  onRoundStart?: (round: number, totalRounds: number) => void;
+}
+
+export interface SAAgentEvolutionContext {
+  skillName: string;
+  skillContent: string;
+  soulPreferences?: { communicationStyle?: string; boundaries?: string[] };
+  memoryRules?: Array<{ category: string; rule: string }>;
+  workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string };
+  sessionEvidence?: SessionEvidenceContext;
+  loopConfig?: {
+    enabled?: boolean;
+    maxRounds?: number;
+    minConfidence?: number;
+  };
 }
 
 /**
@@ -90,85 +106,26 @@ export class SAAgentEvolutionEngine {
    * Generate evolution recommendations using SA Agent with streaming
    */
   async generateRecommendations(
-    context: {
-      skillName: string;
-      skillContent: string;
-      soulPreferences?: { communicationStyle?: string; boundaries?: string[] };
-      memoryRules?: Array<{ category: string; rule: string }>;
-      workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string };
-    },
+    context: SAAgentEvolutionContext,
     callbacks?: StreamCallbacks
   ): Promise<SAAgentRecommendation[]> {
     if (!this.client) {
       throw new Error('SA Agent model not configured. Run `sa config` to set up model.');
     }
 
-    const prompt = buildEvolutionPrompt(context);
-
-    try {
-      // Use streaming API for real-time output
-      const stream = this.client.messages.stream({
-        model: this.modelId,
-        max_tokens: 4096,
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      let fullText = '';
-      let thinkingText = '';
-
-      // Process stream events using async iteration
-      for await (const event of await stream) {
-        if (event.type === 'content_block_delta') {
-          const delta = event.delta as any;
-          if (delta.type === 'thinking_delta' && delta.thinking) {
-            thinkingText += delta.thinking;
-            callbacks?.onThinking?.(delta.thinking);
-          } else if (delta.type === 'text_delta' && delta.text) {
-            fullText += delta.text;
-            callbacks?.onContent?.(delta.text);
-          }
-        }
-      }
-
-      callbacks?.onComplete?.();
-
-      // Debug: log fullText if parsing might fail
-      const recommendations = this.parseRecommendations(fullText);
-      if (recommendations.length === 0 && fullText) {
-        console.log('[DEBUG] fullText length:', fullText.length);
-        console.log('[DEBUG] fullText preview:', fullText.slice(0, 300));
-      }
-
-      return recommendations;
-    } catch (error: any) {
-      throw new Error(`SA Agent request failed: ${error.message}`);
+    if (context.loopConfig?.enabled === false) {
+      return this.generateRecommendationsSingle(context, callbacks);
     }
+
+    return this.generateRecommendationsLoop(context, callbacks);
   }
 
-  /**
-   * Generate evolution recommendations (non-streaming, for compatibility)
-   */
-  async generateRecommendationsSync(context: {
-    skillName: string;
-    skillContent: string;
-    soulPreferences?: { communicationStyle?: string; boundaries?: string[] };
-    memoryRules?: Array<{ category: string; rule: string }>;
-    workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string };
-  }): Promise<SAAgentRecommendation[]> {
+  async generateRecommendationsSync(context: SAAgentEvolutionContext): Promise<SAAgentRecommendation[]> {
     if (!this.client) {
       throw new Error('SA Agent model not configured.');
     }
 
-    const prompt = buildEvolutionPrompt(context);
-    const response = await this.client.messages.create({
-      model: this.modelId,
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const textBlock = response.content.find(block => block.type === 'text');
-    const text = textBlock && 'text' in textBlock ? textBlock.text : '';
-    return this.parseRecommendations(text);
+    return this.generateRecommendationsSingle({ ...context, loopConfig: { enabled: false } });
   }
 
   /**
@@ -197,6 +154,96 @@ export class SAAgentEvolutionEngine {
         } catch {}
       }
       return [];
+    }
+  }
+
+  private async generateRecommendationsLoop(
+    context: SAAgentEvolutionContext,
+    callbacks?: StreamCallbacks
+  ): Promise<SAAgentRecommendation[]> {
+    const maxRounds = Math.max(2, Math.min(context.loopConfig?.maxRounds ?? 3, 4));
+    const minConfidence = context.loopConfig?.minConfidence ?? 0.8;
+
+    let currentContext = { ...context };
+    let previousFingerprint = '';
+    let bestRecommendations: SAAgentRecommendation[] = [];
+    let bestScore = -1;
+    const roundSummaries: string[] = [];
+
+    for (let round = 1; round <= maxRounds; round++) {
+      callbacks?.onRoundStart?.(round, maxRounds);
+      if (round > 1) {
+        currentContext = {
+          ...context,
+          skillContent: augmentSkillContentForLoop(context.skillContent, roundSummaries),
+          loopConfig: { ...context.loopConfig, enabled: false },
+        };
+      }
+
+      const recommendations = await this.generateRecommendationsSingle(currentContext, {
+        ...callbacks,
+        onRoundStart: undefined,
+      });
+
+      const fingerprint = fingerprintRecommendations(recommendations);
+      const score = scoreRecommendations(recommendations, minConfidence);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestRecommendations = recommendations;
+      }
+
+      if (fingerprint === previousFingerprint) {
+        break;
+      }
+      previousFingerprint = fingerprint;
+
+      roundSummaries.push(summarizeRound(recommendations, round));
+
+      const stopEarly = recommendations.length > 0 && score >= 1 && recommendations.every(rec => rec.confidence >= minConfidence);
+      if (stopEarly) {
+        break;
+      }
+    }
+
+    callbacks?.onComplete?.();
+    return bestRecommendations;
+  }
+
+  private async generateRecommendationsSingle(
+    context: SAAgentEvolutionContext,
+    callbacks?: StreamCallbacks
+  ): Promise<SAAgentRecommendation[]> {
+    const prompt = buildEvolutionPrompt(context);
+
+    try {
+      const stream = this.client!.messages.stream({
+        model: this.modelId,
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      let fullText = '';
+      for await (const event of await stream) {
+        if (event.type === 'content_block_delta') {
+          const delta = event.delta as any;
+          if (delta.type === 'thinking_delta' && delta.thinking) {
+            callbacks?.onThinking?.(delta.thinking);
+          } else if (delta.type === 'text_delta' && delta.text) {
+            fullText += delta.text;
+            callbacks?.onContent?.(delta.text);
+          }
+        }
+      }
+
+      const recommendations = this.parseRecommendations(fullText);
+      if (recommendations.length === 0 && fullText) {
+        console.log('[DEBUG] fullText length:', fullText.length);
+        console.log('[DEBUG] fullText preview:', fullText.slice(0, 300));
+      }
+      return recommendations;
+    } catch (error: any) {
+      throw new Error(`SA Agent request failed: ${error.message}`);
     }
   }
 
@@ -265,3 +312,43 @@ Reply format: Just the suggestion, no explanation. Example: "Add error handling 
 
 // Singleton
 export const saAgentEvolutionEngine = new SAAgentEvolutionEngine();
+
+function summarizeRound(recommendations: SAAgentRecommendation[], round: number): string {
+  if (recommendations.length === 0) {
+    return `Round ${round}: no recommendations generated.`;
+  }
+
+  const top = [...recommendations]
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 4)
+    .map(rec => `[${rec.priority}] ${rec.title} (${(rec.confidence * 100).toFixed(0)}%)`);
+
+  return `Round ${round}: ${top.join('; ')}`;
+}
+
+function fingerprintRecommendations(recommendations: SAAgentRecommendation[]): string {
+  return recommendations
+    .map(rec => `${rec.priority}:${rec.type}:${rec.title}:${Math.round(rec.confidence * 100)}`)
+    .sort()
+    .join('|');
+}
+
+function scoreRecommendations(recommendations: SAAgentRecommendation[], minConfidence: number): number {
+  return recommendations.reduce((score, rec) => {
+    if (rec.confidence >= minConfidence) {
+      return score + 2;
+    }
+    if (rec.confidence >= 0.65) {
+      return score + 1;
+    }
+    return score;
+  }, 0);
+}
+
+function augmentSkillContentForLoop(skillContent: string, roundSummaries: string[]): string {
+  if (roundSummaries.length === 0) {
+    return skillContent;
+  }
+
+  return `${skillContent}\n\n## Previous Agent Loop Findings\n${roundSummaries.map(item => `- ${item}`).join('\n')}\n\n## Loop Instruction\nRefine the recommendations above. Remove weak or redundant items, keep only evidence-backed changes, and prefer specific actionable edits.`;
+}

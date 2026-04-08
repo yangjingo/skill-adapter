@@ -106,6 +106,7 @@ sa scan ~/.claude/skills/find-skills/SKILL.md
 ```bash
 sa evolve find-skills
 ```
+`sa evolve` 会先从 Claude Code / OpenClaw 会话里提取关键词、grep 命中和 agent loop 证据，并通过多轮证据收敛重新评分，再生成进化建议；在支持 TTY 的终端中会显示实时进度。`--apply` 仍然是显式写回开关。
 
 #### 4. 查看效能总结
 

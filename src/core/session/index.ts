@@ -8,3 +8,11 @@
 export * from './types';
 export { OpenClawExtractor } from './openclaw-extractor';
 export { ClaudeCodeExtractor, claudeCodeExtractor } from './claude-code-extractor';
+export {
+  SessionEvidenceExtractor,
+  sessionEvidenceExtractor,
+  buildKeywordCatalog,
+  buildGrepTerms,
+  scoreEvidenceText,
+  detectLoopSignals,
+} from './evidence-extractor';

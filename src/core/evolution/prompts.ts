@@ -2,6 +2,40 @@
  * Evolution Prompts - AI prompt templates for skill evolution
  */
 
+export interface SessionEvidenceContext {
+  summary: {
+    scannedSessions: number;
+    relevantSessions: number;
+    skillMatches: number;
+    keywordMatches: number;
+    grepMatches: number;
+    loopSignals: number;
+    topKeywords: Array<{ term: string; count: number }>;
+    topGrepTerms: Array<{ term: string; count: number }>;
+    topErrors: Array<{ message: string; count: number }>;
+    topTools: Array<{ name: string; count: number }>;
+  };
+  highlights: Array<{
+    source: 'claude_code' | 'openclaw';
+    sessionId: string;
+    timestamp?: Date;
+    score: number;
+    reason: string;
+    excerpt: string;
+    matchedKeywords: string[];
+    matchedGrepTerms: string[];
+    loopSignals: string[];
+  }>;
+  loopInsights: Array<{
+    label: string;
+    description: string;
+    frequency: number;
+    sessionIds: string[];
+  }>;
+  keywords: string[];
+  grepTerms: string[];
+}
+
 /**
  * Detect if content is primarily Chinese
  */
@@ -45,18 +79,19 @@ export function buildEvolutionPrompt(context: {
     frameworks?: string[];
     packageManager?: string;
   };
+  sessionEvidence?: SessionEvidenceContext;
 }): string {
-  const { skillName, skillContent, soulPreferences, memoryRules, workspaceInfo } = context;
+  const { skillName, skillContent, soulPreferences, memoryRules, workspaceInfo, sessionEvidence } = context;
 
   // Detect skill language
   const isChinese = isChineseContent(skillContent);
 
   if (isChinese) {
     // Chinese prompt for Chinese skills
-    return buildChinesePrompt(skillName, skillContent, soulPreferences, memoryRules, workspaceInfo);
+    return buildChinesePrompt(skillName, skillContent, soulPreferences, memoryRules, workspaceInfo, sessionEvidence);
   } else {
     // English prompt for English skills
-    return buildEnglishPrompt(skillName, skillContent, soulPreferences, memoryRules, workspaceInfo);
+    return buildEnglishPrompt(skillName, skillContent, soulPreferences, memoryRules, workspaceInfo, sessionEvidence);
   }
 }
 
@@ -68,7 +103,8 @@ function buildChinesePrompt(
   skillContent: string,
   soulPreferences?: { communicationStyle?: string; boundaries?: string[] },
   memoryRules?: Array<{ category: string; rule: string }>,
-  workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string }
+  workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string },
+  sessionEvidence?: SessionEvidenceContext
 ): string {
   let prompt = `你是一位技能优化专家。请分析这个技能并生成进化建议。
 
@@ -118,12 +154,16 @@ ${skillContent.slice(0, 8000)}
     prompt += '\n';
   }
 
+  if (sessionEvidence) {
+    prompt += buildSessionEvidenceSection(sessionEvidence, true);
+  }
+
   prompt += `## 任务
 生成 1-3 个具体、可执行的进化建议。重点关注：
 1. 针对当前工作区的环境适配
 2. 注入用户偏好的风格
 3. 应用历史记忆中的学习经验
-4. **关键要求**: 确保技能可以使用浏览器工具 (WebSearch, WebFetch, Playwright) 获取实时信息。Agent 循环必须具备浏览器搜索能力。
+4. **关键要求**: 如果需要在会话中检索历史证据，只使用 bash \`grep\` / \`rg\` 这类文本搜索方式，不要依赖浏览器工具。模型应该优先分析我们提供的 session evidence。
 
 ## 输出格式 (仅 JSON，无需解释)
 ⚠️ 再次提醒：以下JSON中的title、description、suggestedContent都必须使用中文！
@@ -137,7 +177,7 @@ ${skillContent.slice(0, 8000)}
       "priority": "high",
       "title": "启用浏览器工具实时查询镜像版本",
       "description": "建议在技能中添加使用浏览器工具实时查询最新镜像版本的指导，避免硬编码版本号过期。",
-      "suggestedContent": "## 动态版本查询\\n\\n执行docker pull前，使用WebSearch查询最新版本...",
+      "suggestedContent": "## 动态版本查询\\n\\n执行 docker pull 前，使用 bash grep / rg 检索历史会话中的版本信息...",
       "confidence": 0.9
     }
   ]
@@ -157,7 +197,8 @@ function buildEnglishPrompt(
   skillContent: string,
   soulPreferences?: { communicationStyle?: string; boundaries?: string[] },
   memoryRules?: Array<{ category: string; rule: string }>,
-  workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string }
+  workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string },
+  sessionEvidence?: SessionEvidenceContext
 ): string {
   let prompt = `You are a skill optimization expert. Analyze this skill and generate evolution recommendations.
 
@@ -204,12 +245,16 @@ ${skillContent.slice(0, 8000)}
     prompt += '\n';
   }
 
+  if (sessionEvidence) {
+    prompt += buildSessionEvidenceSection(sessionEvidence, false);
+  }
+
   prompt += `## Task
 Generate 1-3 specific, actionable evolution recommendations. Focus on:
 1. Environment adaptation for this workspace
 2. Injecting user's preferred style
 3. Applying learnings from historical memory
-4. **CRITICAL**: Ensure the skill can use browser tools (WebSearch, WebFetch, Playwright) for real-time information lookup. Agent loops MUST have browser search capability.
+4. **CRITICAL**: For session evidence lookup, rely on bash \`grep\` / \`rg\` text search only. Do not depend on browser tools; use the evidence we provide and refine it across loop rounds.
 
 ## Output Format (JSON only, no explanation)
 \`\`\`json
@@ -265,3 +310,38 @@ Just the summary text, no JSON, keep it brief and friendly.`;
  * Export the language detection function for external use
  */
 export { isChineseContent };
+
+function buildSessionEvidenceSection(sessionEvidence: SessionEvidenceContext, chinese: boolean): string {
+  const heading = chinese ? '## 会话证据' : '## Session Evidence';
+  const summaryLabel = chinese ? '摘要' : 'Summary';
+  const highlightsLabel = chinese ? '高信号片段' : 'High-signal Highlights';
+  const loopsLabel = chinese ? 'Agent Loop 线索' : 'Agent Loop Signals';
+
+  let section = `${heading}\n`;
+  section += `${summaryLabel}: scanned=${sessionEvidence.summary.scannedSessions}, relevant=${sessionEvidence.summary.relevantSessions}, `;
+  section += `skillMatches=${sessionEvidence.summary.skillMatches}, keywordHits=${sessionEvidence.summary.keywordMatches}, `;
+  section += `grepHits=${sessionEvidence.summary.grepMatches}, loopSignals=${sessionEvidence.summary.loopSignals}\n`;
+
+  if (sessionEvidence.summary.topKeywords.length > 0) {
+    section += `Keywords: ${sessionEvidence.summary.topKeywords.map(item => `${item.term}(${item.count})`).join(', ')}\n`;
+  }
+  if (sessionEvidence.summary.topGrepTerms.length > 0) {
+    section += `Grep Terms: ${sessionEvidence.summary.topGrepTerms.map(item => `${item.term}(${item.count})`).join(', ')}\n`;
+  }
+  if (sessionEvidence.loopInsights.length > 0) {
+    section += `${loopsLabel}:\n`;
+    for (const loop of sessionEvidence.loopInsights.slice(0, 5)) {
+      section += `- ${loop.label}: ${loop.description} (${loop.frequency})\n`;
+    }
+  }
+  if (sessionEvidence.highlights.length > 0) {
+    section += `${highlightsLabel}:\n`;
+    for (const highlight of sessionEvidence.highlights.slice(0, 6)) {
+      section += `- [${highlight.source}] ${highlight.reason}\n`;
+      section += `  ${highlight.excerpt.slice(0, 260)}\n`;
+    }
+  }
+
+  section += '\n';
+  return section;
+}

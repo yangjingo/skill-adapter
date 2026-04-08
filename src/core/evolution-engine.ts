@@ -12,7 +12,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { ClaudeCodeExtractor, ClaudeCodePattern } from './session/claude-code-extractor';
 import { OpenClawExtractor } from './session/openclaw-extractor';
-import { Pattern } from './session/types';
+import { Pattern, SessionEvidenceBundle } from './session/types';
+import { sessionEvidenceExtractor } from './session/evidence-extractor';
 
 // Type aliases for clarity
 type Priority = 'high' | 'medium' | 'low';
@@ -54,6 +55,7 @@ export interface EvolutionContext {
   memoryRules: MemoryRule[];
   behaviorStyle: BehaviorStyle;
   crossSkillPatterns: CrossSkillPattern[];
+  sessionEvidence?: SessionEvidenceBundle;
 }
 
 // Internal types
@@ -82,22 +84,29 @@ export class EvolutionEngine {
     this.openClawExtractor = new OpenClawExtractor();
   }
 
-  async buildEvolutionContext(skillName: string, days = 7): Promise<EvolutionContext> {
-    const [sessionPatterns, memoryRules, behaviorStyle, crossSkillPatterns] = await Promise.all([
-      this.analyzeSessions(skillName, days),
+  async buildEvolutionContext(skillName: string, days = 7, skillContent = ''): Promise<EvolutionContext> {
+    const sessionEvidencePromise = this.buildSessionEvidence(skillName, days, skillContent);
+    const [sessionEvidence, memoryRules, behaviorStyle, crossSkillPatterns] = await Promise.all([
+      sessionEvidencePromise,
       this.extractMemoryRules(),
       this.extractBehaviorStyle(),
       this.extractCrossSkillPatterns(skillName),
     ]);
-    return { sessionPatterns, memoryRules, behaviorStyle, crossSkillPatterns };
+    const sessionPatterns = await this.analyzeSessions(sessionEvidence);
+    return { sessionPatterns, memoryRules, behaviorStyle, crossSkillPatterns, sessionEvidence };
   }
 
-  private async analyzeSessions(skillName: string, days: number): Promise<SessionPatternAnalysis> {
-    const [claudeCodeSessions, openClawSessions] = await Promise.all([
-      this.extractClaudeCodeSessions(skillName, days),
-      this.extractOpenClawSessions(skillName, days),
-    ]);
-    const allPatterns = [...claudeCodeSessions, ...openClawSessions];
+  private async buildSessionEvidence(skillName: string, days: number, skillContent = ''): Promise<SessionEvidenceBundle> {
+    return sessionEvidenceExtractor.buildEvidence(skillName, days, skillContent);
+  }
+
+  private async analyzeSessions(sessionEvidence: SessionEvidenceBundle): Promise<SessionPatternAnalysis> {
+    const claudeCodeSessions = sessionEvidence.claudeCodeSessions;
+    const openClawSessions = sessionEvidence.openClawSessions;
+    const allPatterns = [
+      ...this.claudeCodeExtractor.summarizePatterns(claudeCodeSessions),
+      ...this.openClawExtractor.summarizePatterns(openClawSessions),
+    ];
     return {
       toolSequences: this.findToolSequences(allPatterns),
       errorPatterns: this.findErrorPatterns(allPatterns),
@@ -105,37 +114,6 @@ export class EvolutionEngine {
       userIntents: this.findUserIntents(allPatterns),
       summary: this.calculateSummary(allPatterns),
     };
-  }
-
-  private async extractClaudeCodeSessions(skillName: string, days: number): Promise<ClaudeCodePattern[]> {
-    try {
-      const sessionFiles = await this.claudeCodeExtractor.findSessionFiles(days);
-      const relevantSessions: ClaudeCodePattern[] = [];
-      for (const file of sessionFiles.slice(0, 10)) {
-        const session = await this.claudeCodeExtractor.extractSession(file.path);
-        const skillRelated = session.metadata.skillNames.includes(skillName) ||
-          session.userMessages.some(m => m.content.toLowerCase().includes(skillName.toLowerCase()));
-        if (skillRelated) {
-          const patterns = await this.claudeCodeExtractor.summarizePatterns([session]);
-          relevantSessions.push(...patterns);
-        }
-      }
-      return relevantSessions;
-    } catch { return []; }
-  }
-
-  private async extractOpenClawSessions(skillName: string, days: number): Promise<Pattern[]> {
-    try {
-      const sessionFiles = await this.openClawExtractor.findSessionFiles(days);
-      const relevantSessions: Pattern[] = [];
-      for (const file of sessionFiles.slice(0, 10)) {
-        const session = await this.openClawExtractor.extractSession(file);
-        if (session.skillsUsed.includes(skillName)) {
-          relevantSessions.push(...this.openClawExtractor.summarizePatterns([session]));
-        }
-      }
-      return relevantSessions;
-    } catch { return []; }
   }
 
   private findToolSequences(patterns: (ClaudeCodePattern | Pattern)[]): ToolSequence[] {
