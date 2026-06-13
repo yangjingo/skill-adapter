@@ -316,7 +316,9 @@ export class SecurityPatterns {
       .filter(p => p.type === 'sensitive');
 
     for (const patternDef of allPatterns) {
-      const regex = new RegExp(patternDef.pattern.source, patternDef.pattern.flags);
+      const regex = patternDef.pattern instanceof RegExp
+        ? patternDef.pattern
+        : new RegExp(patternDef.pattern);
       let match;
 
       while ((match = regex.exec(content)) !== null) {
@@ -337,7 +339,7 @@ export class SecurityPatterns {
           },
           severity: patternDef.severity,
           matchedText: maskedText,
-          recommendation: patternDef.recommendation
+          recommendation: patternDef.recommendation || ''
         });
       }
     }
@@ -357,7 +359,9 @@ export class SecurityPatterns {
       .filter(p => p.type === 'dangerous');
 
     for (const patternDef of allPatterns) {
-      const regex = new RegExp(patternDef.pattern.source, patternDef.pattern.flags);
+      const regex = patternDef.pattern instanceof RegExp
+        ? patternDef.pattern
+        : new RegExp(patternDef.pattern);
       let match;
 
       while ((match = regex.exec(content)) !== null) {

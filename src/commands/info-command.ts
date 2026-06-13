@@ -5,6 +5,7 @@ import * as os from 'os';
 
 import { EvolutionDatabase } from '../core/database';
 import { findClaudeCodeSkillsPath, findOpenClawSkillsPath, getClaudeCodePlugins } from '../core/discovery/paths';
+import { countFiles, showTree } from '../utils/helpers';
 
 export function registerInfoCommand(program: Command): void {
 // sa info [skill] - Unified view/list
@@ -164,56 +165,10 @@ program
           console.log(`Modified: ${stats.mtime.toLocaleString()}`);
           console.log(`Path: ${skillDir}`);
 
-          // Count files and directories
-          const countFiles = (dir: string): { files: number; dirs: number; size: number } => {
-            let files = 0, dirs = 0, size = 0;
-            const items = fs.readdirSync(dir);
-            for (const item of items) {
-              if (item.startsWith('.')) continue;
-              const itemPath = path.join(dir, item);
-              const stat = fs.statSync(itemPath);
-              if (stat.isDirectory()) {
-                dirs++;
-                const sub = countFiles(itemPath);
-                files += sub.files;
-                dirs += sub.dirs;
-                size += sub.size;
-              } else {
-                files++;
-                size += stat.size;
-              }
-            }
-            return { files, dirs, size };
-          };
           const counts = countFiles(skillDir);
           console.log(`Files: ${counts.files} | Dirs: ${counts.dirs} | Total Size: ${(counts.size / 1024).toFixed(1)} KB`);
 
-          // Show directory tree
           console.log(`\n── Directory Tree ──`);
-          const showTree = (dir: string, prefix: string = '', maxDepth = 3, currentDepth = 0) => {
-            if (currentDepth >= maxDepth) return;
-            const items = fs.readdirSync(dir).filter(i => !i.startsWith('.'));
-            items.forEach((item, index) => {
-              const itemPath = path.join(dir, item);
-              const isLast = index === items.length - 1;
-              const prefixChar = isLast ? '└── ' : '├── ';
-              const newPrefix = prefix + (isLast ? '    ' : '│   ');
-              const stat = fs.statSync(itemPath);
-
-              let info = item;
-              if (stat.isDirectory()) {
-                info += '/';
-              } else {
-                info += ` (${(stat.size / 1024).toFixed(1)} KB)`;
-              }
-
-              console.log(prefix + prefixChar + info);
-
-              if (stat.isDirectory()) {
-                showTree(itemPath, newPrefix, maxDepth, currentDepth + 1);
-              }
-            });
-          };
           showTree(skillDir);
         };
 
@@ -314,56 +269,10 @@ program
           console.log(`Modified: ${stats.mtime.toLocaleString()}`);
           console.log(`Path: ${skillDir}`);
 
-          // Count files and directories
-          const countFiles = (dir: string): { files: number; dirs: number; size: number } => {
-            let files = 0, dirs = 0, size = 0;
-            const items = fs.readdirSync(dir);
-            for (const item of items) {
-              if (item.startsWith('.')) continue;
-              const itemPath = path.join(dir, item);
-              const stat = fs.statSync(itemPath);
-              if (stat.isDirectory()) {
-                dirs++;
-                const sub = countFiles(itemPath);
-                files += sub.files;
-                dirs += sub.dirs;
-                size += sub.size;
-              } else {
-                files++;
-                size += stat.size;
-              }
-            }
-            return { files, dirs, size };
-          };
           const counts = countFiles(skillDir);
           console.log(`Files: ${counts.files} | Dirs: ${counts.dirs} | Total Size: ${(counts.size / 1024).toFixed(1)} KB`);
 
-          // Show directory tree
           console.log(`\n── Directory Tree ──`);
-          const showTree = (dir: string, prefix: string = '', maxDepth = 3, currentDepth = 0) => {
-            if (currentDepth >= maxDepth) return;
-            const items = fs.readdirSync(dir).filter(i => !i.startsWith('.'));
-            items.forEach((item, index) => {
-              const itemPath = path.join(dir, item);
-              const isLast = index === items.length - 1;
-              const prefixChar = isLast ? '└── ' : '├── ';
-              const newPrefix = prefix + (isLast ? '    ' : '│   ');
-              const stat = fs.statSync(itemPath);
-
-              let info = item;
-              if (stat.isDirectory()) {
-                info += '/';
-              } else {
-                info += ` (${(stat.size / 1024).toFixed(1)} KB)`;
-              }
-
-              console.log(prefix + prefixChar + info);
-
-              if (stat.isDirectory()) {
-                showTree(itemPath, newPrefix, maxDepth, currentDepth + 1);
-              }
-            });
-          };
           showTree(skillDir);
 
           // Show references
@@ -452,56 +361,10 @@ program
             console.log(`Marketplace: ${pluginInfo.marketplace}`);
           }
 
-          // Count files and directories
-          const countFiles = (dir: string): { files: number; dirs: number; size: number } => {
-            let files = 0, dirs = 0, size = 0;
-            const items = fs.readdirSync(dir);
-            for (const item of items) {
-              if (item.startsWith('.')) continue;
-              const itemPath = path.join(dir, item);
-              const stat = fs.statSync(itemPath);
-              if (stat.isDirectory()) {
-                dirs++;
-                const sub = countFiles(itemPath);
-                files += sub.files;
-                dirs += sub.dirs;
-                size += sub.size;
-              } else {
-                files++;
-                size += stat.size;
-              }
-            }
-            return { files, dirs, size };
-          };
           const counts = countFiles(skillDir);
           console.log(`Files: ${counts.files} | Dirs: ${counts.dirs} | Total Size: ${(counts.size / 1024).toFixed(1)} KB`);
 
-          // Show directory tree
           console.log(`\n── Directory Tree ──`);
-          const showTree = (dir: string, prefix: string = '', maxDepth = 3, currentDepth = 0) => {
-            if (currentDepth >= maxDepth) return;
-            const items = fs.readdirSync(dir).filter(i => !i.startsWith('.'));
-            items.forEach((item, index) => {
-              const itemPath = path.join(dir, item);
-              const isLast = index === items.length - 1;
-              const prefixChar = isLast ? '└── ' : '├── ';
-              const newPrefix = prefix + (isLast ? '    ' : '│   ');
-              const stat = fs.statSync(itemPath);
-
-              let info = item;
-              if (stat.isDirectory()) {
-                info += '/';
-              } else {
-                info += ` (${(stat.size / 1024).toFixed(1)} KB)`;
-              }
-
-              console.log(prefix + prefixChar + info);
-
-              if (stat.isDirectory()) {
-                showTree(itemPath, newPrefix, maxDepth, currentDepth + 1);
-              }
-            });
-          };
           showTree(skillDir);
 
           console.log('\n💡 Use `sa import ' + skillDir + '` to import this skill.');

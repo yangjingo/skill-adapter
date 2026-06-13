@@ -210,7 +210,8 @@ export class AgentDetector {
       'cline': ['file-operations', 'bash', 'web-search'],
       'cursor': ['file-operations', 'code-completion'],
       'windsurf': ['file-operations', 'code-completion'],
-      'unknown': []
+      'unknown': [],
+      'generic': []
     };
 
     return capabilities[platform] || [];
@@ -241,7 +242,8 @@ export class AgentDetector {
       'cline': 'claude-sonnet-4-6',
       'cursor': 'gpt-4',
       'windsurf': 'claude-sonnet-4-6',
-      'unknown': 'default'
+      'unknown': 'default',
+      'generic': 'default'
     };
 
     return recommendations[platform] || 'default';

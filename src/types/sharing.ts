@@ -29,9 +29,12 @@ export interface SkillManifest {
 }
 
 /**
- * Supported skill platforms
+ * Supported agent and skill platforms — canonical union used by both config and sharing modules.
  */
-export type SkillPlatform = 'claude-code' | 'openclaw' | 'cline' | 'cursor' | 'windsurf' | 'generic';
+export type SupportedPlatform = 'claude-code' | 'openclaw' | 'cline' | 'cursor' | 'windsurf' | 'generic' | 'unknown';
+
+/** @deprecated Use SupportedPlatform instead */
+export type SkillPlatform = SupportedPlatform;
 
 /**
  * Skill content structure

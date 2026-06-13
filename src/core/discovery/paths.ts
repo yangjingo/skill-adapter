@@ -5,62 +5,36 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export function findOpenClawSkillsPath(): string | null {
-  const possiblePaths = [
-    path.join(process.env.USERPROFILE || '', '.openclaw', 'skills'),
-    path.join(process.env.APPDATA || '', 'openclaw', 'skills'),
-    path.join(process.env.HOME || '', '.openclaw', 'skills'),
-  ];
-  for (const p of possiblePaths) {
+// ── Internal helpers ────────────────────────────────────────────
+
+function baseDirs(): string[] {
+  return [process.env.USERPROFILE, process.env.APPDATA, process.env.HOME].filter(Boolean) as string[];
+}
+
+function findFirstPath(...segments: string[]): string | null {
+  for (const base of baseDirs()) {
+    const p = path.join(base, ...segments);
     if (fs.existsSync(p)) return p;
   }
   return null;
 }
 
-/**
- * Find OpenClaw workspace directory
- * Contains AGENTS.md, SOUL.md, MEMORY.md, USER.md, skills/
- */
+// ── Public path finders ─────────────────────────────────────────
+
+export function findOpenClawSkillsPath(): string | null {
+  return findFirstPath('.openclaw', 'skills');
+}
+
 export function findOpenClawWorkspacePath(): string | null {
-  const possiblePaths = [
-    path.join(process.env.USERPROFILE || '', '.openclaw', 'workspace'),
-    path.join(process.env.APPDATA || '', 'openclaw', 'workspace'),
-    path.join(process.env.HOME || '', '.openclaw', 'workspace'),
-  ];
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
+  return findFirstPath('.openclaw', 'workspace');
 }
 
 export function findClaudeCodeSkillsPath(): string | null {
-  const possiblePaths = [
-    path.join(process.env.USERPROFILE || '', '.claude'),
-    path.join(process.env.APPDATA || '', 'claude'),
-    path.join(process.env.HOME || '', '.claude'),
-  ];
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
+  return findFirstPath('.claude');
 }
 
-/**
- * Find Claude Code plugins cache directory
- * Skills are installed in ~/.claude/plugins/cache/<marketplace>/<plugin-name>/<version>/skills/
- */
 export function findClaudeCodePluginsPath(): string | null {
-  const basePaths = [
-    process.env.USERPROFILE || '',
-    process.env.APPDATA || '',
-    process.env.HOME || '',
-  ];
-  for (const base of basePaths) {
-    if (!base) continue;
-    const pluginsPath = path.join(base, '.claude', 'plugins', 'cache');
-    if (fs.existsSync(pluginsPath)) return pluginsPath;
-  }
-  return null;
+  return findFirstPath('.claude', 'plugins', 'cache');
 }
 
 /**
@@ -83,11 +57,7 @@ export function getClaudeCodePlugins(): { name: string; path: string; marketplac
             const install = installs[0];
             const name = pluginId.split('@')[0];
             const marketplace = pluginId.split('@')[1] || 'unknown';
-            plugins.push({
-              name,
-              path: install.installPath,
-              marketplace
-            });
+            plugins.push({ name, path: install.installPath, marketplace });
           }
         }
       }
@@ -107,12 +77,10 @@ export function getClaudeCodePlugins(): { name: string; path: string; marketplac
 
           const versions = fs.readdirSync(pluginPath);
           if (versions.length > 0) {
-            const latestVersion = versions[0];
-            const skillPath = path.join(pluginPath, latestVersion);
             plugins.push({
               name: pluginDir,
-              path: skillPath,
-              marketplace
+              path: path.join(pluginPath, versions[0]),
+              marketplace,
             });
           }
         }

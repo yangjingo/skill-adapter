@@ -57,7 +57,16 @@ export class SkillsStore {
     return this.getSkillPath(skillName) !== null;
   }
 
-  async getVersion(_skillName: string): Promise<string | null> {
+  async getVersion(skillName: string): Promise<string | null> {
+    const skillPath = this.getSkillPath(skillName);
+    if (!skillPath) return null;
+    const pkgPath = path.join(skillPath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        return pkg.version || null;
+      } catch { /* ignore */ }
+    }
     return null;
   }
 

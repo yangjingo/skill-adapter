@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { safeImport, normalizeReact } from '../utils/helpers';
 
 export interface EvolveLiveSessionOptions {
   skillName: string;
@@ -82,8 +83,11 @@ export async function createEvolveLiveSession(options: EvolveLiveSessionOptions)
     safeImport<InkModule>('ink'),
   ]);
 
-  const react = normalizeReact(reactMod);
-  if (!react || !inkMod || typeof inkMod.render !== 'function') {
+  const react = normalizeReact(reactMod) as ReactModule | null;
+  if (!react || typeof react.useEffect !== 'function' || typeof react.useState !== 'function') {
+    return null;
+  }
+  if (!inkMod || typeof inkMod.render !== 'function') {
     return null;
   }
 
@@ -125,29 +129,7 @@ export async function createEvolveLiveSession(options: EvolveLiveSessionOptions)
   };
 }
 
-async function safeImport<T>(moduleName: string): Promise<T | null> {
-  try {
-    return await import(moduleName) as T;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeReact(moduleValue: Record<string, unknown> | null): ReactModule | null {
-  if (!moduleValue) return null;
-
-  const candidate = (moduleValue.default as unknown) ?? moduleValue;
-  if (!candidate || typeof (candidate as { createElement?: unknown }).createElement !== 'function') {
-    return null;
-  }
-
-  const react = candidate as Partial<ReactModule>;
-  if (typeof react.useEffect !== 'function' || typeof react.useState !== 'function') {
-    return null;
-  }
-
-  return react as ReactModule;
-}
+// safeImport 和 normalizeReact 已从 ../utils/helpers 导入
 
 function createLiveViewComponent(
   React: ReactModule,

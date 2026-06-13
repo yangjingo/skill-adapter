@@ -10,9 +10,8 @@ export function registerExportCommand(program: Command): void {
     .description('Export local skill package')
     .option('-o, --output <path>', 'Export to file')
     .option('-f, --format <format>', 'Export format (json, yaml, zip)', 'zip')
-    .option('--zip', 'Export as ZIP (shorthand for -f zip)', false)
     .option('--yes', 'Skip security confirmation', false)
-    .action(async (skillName: string | undefined, options: { output?: string; format: string; zip: boolean; yes: boolean }) => {
+    .action(async (skillName: string | undefined, options: { output?: string; format: string; yes: boolean }) => {
     const db = new EvolutionDatabase();
 
     if (!skillName) {
@@ -43,7 +42,6 @@ export function registerExportCommand(program: Command): void {
     }
 
     const latestRecord = records[records.length - 1];
-    const format = options.zip ? 'zip' : options.format;
 
     const skillPackage = skillExporter.createPackage(
       skillName,
@@ -66,12 +64,12 @@ export function registerExportCommand(program: Command): void {
     }
     skillPackage.metadata.securityScan = scanResult;
 
-    const ext = format === 'zip' ? 'zip' : format;
+    const ext = options.format === 'zip' ? 'zip' : options.format;
     const outputPath = options.output || `./${skillName}-v${latestRecord.version}.${ext}`;
     console.log(`\n📦 Exporting to ${outputPath}...`);
 
     skillExporter.exportToFile(skillPackage, outputPath, {
-      format: format as 'json' | 'yaml' | 'zip',
+      format: options.format as 'json' | 'yaml' | 'zip',
       includePatches: true,
       includeConstraints: true,
       includeSecurityScan: true,

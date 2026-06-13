@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { maskApiKey } from '../utils/helpers';
 import { modelConfigLoader } from '../core/evolution';
 import { renderCommandResultWithInk } from '../ui';
 import { buildInitCommandView } from './view-model';
@@ -20,10 +21,6 @@ if (fs.existsSync(configPath)) {
   } catch {
     // Ignore config errors
   }
-}
-
-function maskApiKey(key: string): string {
-  return key.length > 8 ? `${key.substring(0, 4)}...${key.substring(key.length - 4)}` : '****';
 }
 
 export function registerInitCommand(program: Command): void {

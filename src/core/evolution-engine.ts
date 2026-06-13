@@ -86,14 +86,13 @@ export class EvolutionEngine {
 
   async buildEvolutionContext(skillName: string, days = 7, skillContent = ''): Promise<EvolutionContext> {
     const sessionEvidencePromise = this.buildSessionEvidence(skillName, days, skillContent);
-    const [sessionEvidence, memoryRules, behaviorStyle, crossSkillPatterns] = await Promise.all([
+    const [sessionEvidence, memoryRules, behaviorStyle] = await Promise.all([
       sessionEvidencePromise,
       this.extractMemoryRules(),
       this.extractBehaviorStyle(),
-      this.extractCrossSkillPatterns(skillName),
     ]);
     const sessionPatterns = await this.analyzeSessions(sessionEvidence);
-    return { sessionPatterns, memoryRules, behaviorStyle, crossSkillPatterns, sessionEvidence };
+    return { sessionPatterns, memoryRules, behaviorStyle, crossSkillPatterns: [], sessionEvidence };
   }
 
   private async buildSessionEvidence(skillName: string, days: number, skillContent = ''): Promise<SessionEvidenceBundle> {
@@ -260,10 +259,6 @@ export class EvolutionEngine {
     }
 
     return style;
-  }
-
-  private async extractCrossSkillPatterns(_skillName: string): Promise<CrossSkillPattern[]> {
-    return []; // Future: analyze other skills for transferable patterns
   }
 
   generateRecommendations(context: EvolutionContext): EvolutionRecommendation[] {

@@ -3,15 +3,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import ora from 'ora';
 
+import { printCommunityLinks } from './common';
 import { EvolutionDatabase } from '../core/database';
 import { securityEvaluator } from '../core/security';
 import { skillExporter } from '../core/sharing';
 import { platformFetcher } from '../core/discovery';
 import { findClaudeCodeSkillsPath, findOpenClawSkillsPath } from '../core/discovery/paths';
 import { RemoteSkill } from '../types/discovery';
-
-const COMMUNITY_SKILLS_FEED_URL = 'https://github.com/leow3lab/ascend-skills';
-const COMMUNITY_CURATED_SKILLS_URL = 'https://github.com/leow3lab/awesome-ascend-skills';
 
 const COLORS = {
   reset: '\x1b[0m',
@@ -58,7 +56,6 @@ function parseSkillsShUrl(source: string): { pageUrl: string; githubRepo?: strin
   } catch {
     return null;
   }
-
   return null;
 }
 
@@ -70,22 +67,10 @@ function buildManualInstallHint(repoRef: string, skillName?: string): string {
   return parts.join(' ');
 }
 
-function printCommunityLinks(mode: 'radar' | 'targets'): void {
-  if (mode === 'radar') {
-    console.log('\n?? Community Radar:');
-    console.log(`   Shared skills feed: ${COMMUNITY_SKILLS_FEED_URL}`);
-    console.log(`   Curated list:       ${COMMUNITY_CURATED_SKILLS_URL}`);
-    console.log('\n? Your turn: polish one skill and share it with: sa share <skill-name>');
-    return;
-  }
-
-  console.log('\n?? Community Targets:');
-  console.log(`   ${COMMUNITY_SKILLS_FEED_URL}`);
-  console.log(`   ${COMMUNITY_CURATED_SKILLS_URL}`);
-}
+// printCommunityLinks imported from ./common (shared via src/utils/helpers.ts)
 
 async function handleImportDiscoverMode(limitText: string): Promise<void> {
-  console.log('?? Discovering hot skills from skills.sh...\n');
+  console.log('🔍 Discovering hot skills from skills.sh...\n');
 
   try {
     const limit = parseInt(limitText, 10);
@@ -100,11 +85,11 @@ async function handleImportDiscoverMode(limitText: string): Promise<void> {
       console.log('  (No data available)');
     }
 
-    console.log('\n?? Next Steps:');
+    console.log('\n📌 Next Steps:');
     console.log('   sa import <skill>            # Install a skill');
     console.log('   sa import <owner/repo>       # Install from skills.sh');
   } catch (error) {
-    console.error(`? Failed to fetch skills: ${error}`);
+    console.error(`❌ Failed to fetch skills: ${error}`);
   }
 }
 
@@ -128,7 +113,7 @@ function resolveImportSource(source: string): { source: string; isLocalPath: boo
       const hasSkillMd = fs.existsSync(path.join(localClaudeSkillDir, 'skill.md'));
       const hasSkillMdUpper = fs.existsSync(path.join(localClaudeSkillDir, 'SKILL.md'));
       if (fs.existsSync(localClaudeSkillDir) && fs.statSync(localClaudeSkillDir).isDirectory() && (hasSkillMd || hasSkillMdUpper)) {
-        console.log('?? Found local Claude Code skill\n');
+        console.log('🔍 Found local Claude Code skill\n');
         resolvedSource = localClaudeSkillDir;
         isLocalPath = true;
       }
@@ -144,7 +129,7 @@ async function handleImportRecommendOnly(source: string): Promise<void> {
     : source;
   const searchUrl = `https://skills.sh/?q=${encodeURIComponent(query)}`;
 
-  console.log('?? Searching on skills.sh...\n');
+  console.log('🔍 Searching on skills.sh...\n');
   console.log(`   ${searchUrl}\n`);
 
   const [searchResults, hotResults] = await Promise.all([
@@ -153,7 +138,7 @@ async function handleImportRecommendOnly(source: string): Promise<void> {
   ]);
 
   if (searchResults.length > 0) {
-    console.log('?? Recommendations:');
+    console.log('📌 Recommendations:');
     for (const [idx, result] of searchResults.entries()) {
       console.log(`  ${idx + 1}. ${result.name} (${result.stats.downloads} downloads)`);
       if (result.url) {
@@ -161,17 +146,17 @@ async function handleImportRecommendOnly(source: string): Promise<void> {
       }
     }
   } else {
-    console.log('?? Recommendations: none');
+    console.log('📌 Recommendations: none');
   }
 
   if (hotResults.length > 0) {
-    console.log('\n?? Trending:');
+    console.log('\n🔥 Trending:');
     for (const entry of hotResults) {
       console.log(`  #${entry.rank} ${entry.skill.name} (${entry.skill.stats.downloads} downloads)`);
     }
   }
 
-  console.log('\n?? This command no longer auto-downloads remote skills.');
+  console.log('\n⚠️ This command no longer auto-downloads remote skills.');
   console.log('   Install manually if needed: npx skills add <repo> --skill <name>');
   printCommunityLinks('radar');
 }
@@ -187,52 +172,47 @@ export function registerImportCommand(program: Command): void {  program
         await handleImportDiscoverMode(options.limit);
         return;
       }
-  
-      console.log(`?? Getting skill from: ${source}\n`);
+
+      console.log(`📥 Getting skill from: ${source}\n`);
       const resolved = resolveImportSource(source);
       source = resolved.source;
-  
+
       if (!resolved.isLocalPath && !resolved.isOpenClawSkill) {
         await handleImportRecommendOnly(source);
         return;
       }
-  
+
       const db = new EvolutionDatabase();
-  
+
       try {
-        // Detect source type
         let skillPackage = null;
         let sourceType = 'unknown';
-        let skillPath = '';  // Track where skill files are located
+        let skillPath = '';
         let contentFetchWarning = '';
-  
+
         if (source.startsWith('http://') || source.startsWith('https://')) {
           sourceType = 'url';
-  
+
           if (source.includes('skills.sh') || source.includes('localhost:3000')) {
             sourceType = 'registry';
             console.log('🔍 Detected: Registry URL');
-  
+
             const registrySkill = parseSkillsShUrl(source);
             if (registrySkill?.githubRepo && registrySkill.skill) {
               const commandRepo = `https://github.com/${registrySkill.githubRepo}`;
               console.log(`   Command: ${buildManualInstallHint(commandRepo, registrySkill.skill)}`);
             }
-  
-            // Extract skill name from URL
+
             const name = options.name || registrySkill?.skill || source.split('/').pop()?.replace(/\.git$/, '') || 'imported-skill';
             const registryUrl = new URL(source).origin;
-  
-            // Download from registry (ZIP format)
             const downloadUrl = `${registryUrl}/api/skills/${name}/download`;
             console.log(`📦 Downloading from registry...`);
-  
+
             const response = await fetch(downloadUrl);
             if (!response.ok) {
               throw new Error(`Download failed: ${response.statusText}`);
             }
-  
-            // For now, use mock data since we can't easily extract ZIP in Node
+
             skillPackage = {
               id: `skill_${Date.now()}`,
               manifest: { name, version: '1.0.0', description: '', author: 'unknown', license: 'MIT', keywords: [], compatibility: { platforms: ['claude-code'] } },
@@ -246,22 +226,20 @@ export function registerImportCommand(program: Command): void {  program
         } else if (fs.existsSync(source)) {
           sourceType = 'file';
           console.log('🔍 Detected: Local file');
-  
+
           const stat = fs.statSync(source);
           if (stat.isDirectory()) {
-            // Directory - check for skill.json or SKILL.md (OpenClaw format)
-            skillPath = source;  // Store the directory path
+            skillPath = source;
             const skillJsonPath = path.join(source, 'skill.json');
             const skillMdPath = path.join(source, 'skill.md');
             const openClawMdPath = path.join(source, 'SKILL.md');
-  
+
             if (fs.existsSync(skillJsonPath)) {
-              // Standard format
               const manifest = JSON.parse(fs.readFileSync(skillJsonPath, 'utf-8'));
               const systemPrompt = fs.existsSync(skillMdPath)
                 ? fs.readFileSync(skillMdPath, 'utf-8')
                 : `# ${manifest.name}\n\nImported from directory`;
-  
+
               skillPackage = {
                 id: `skill_${Date.now()}`,
                 manifest,
@@ -269,10 +247,9 @@ export function registerImportCommand(program: Command): void {  program
                 metadata: { createdAt: new Date(), updatedAt: new Date() }
               };
             } else if (fs.existsSync(skillMdPath)) {
-              // Claude Code format (skill.md without skill.json)
               const skillName = options.name || path.basename(source);
               const systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
-  
+
               skillPackage = {
                 id: `skill_${Date.now()}`,
                 manifest: {
@@ -290,10 +267,9 @@ export function registerImportCommand(program: Command): void {  program
               };
               console.log('🔍 Detected: Claude Code skill format');
             } else if (fs.existsSync(openClawMdPath)) {
-              // OpenClaw format
               const skillName = options.name || path.basename(source);
               const systemPrompt = fs.readFileSync(openClawMdPath, 'utf-8');
-  
+
               skillPackage = {
                 id: `skill_${Date.now()}`,
                 manifest: {
@@ -315,23 +291,21 @@ export function registerImportCommand(program: Command): void {  program
             skillPackage = skillExporter.importFromFile(source, { rename: options.name, validateSecurity: options.scan });
           }
         } else {
-          // Assume it's a skill name - check local first, then search remote
           sourceType = 'registry-name';
-  
-          // First, check if it's a local OpenClaw skill
+
           const openClawPath = findOpenClawSkillsPath();
           if (openClawPath) {
             const localSkillDir = path.join(openClawPath, source);
             if (fs.existsSync(localSkillDir) && fs.statSync(localSkillDir).isDirectory()) {
               console.log('🔍 Found local OpenClaw skill\n');
-              skillPath = localSkillDir;  // Store the skill directory path
+              skillPath = localSkillDir;
               const skillMdPath = path.join(localSkillDir, 'SKILL.md');
-  
+
               let systemPrompt = '';
               if (fs.existsSync(skillMdPath)) {
                 systemPrompt = fs.readFileSync(skillMdPath, 'utf-8');
               }
-  
+
               const skillName = options.name || source;
               skillPackage = {
                 id: `skill_${Date.now()}`,
@@ -350,11 +324,10 @@ export function registerImportCommand(program: Command): void {  program
               sourceType = 'openclaw';
             }
           }
-  
-          // If not found locally, search remote platforms
+
           if (!skillPackage) {
             console.log('🔍 Searching from skills.sh...\n');
-  
+
             const loadRemoteContent = async (found: RemoteSkill): Promise<{ content: string; fetched: boolean }> => {
             const contentSpinner = ora(`Fetching content for ${found.name}...`).start();
             const content = await platformFetcher.fetchSkillContent(found);
@@ -366,16 +339,14 @@ export function registerImportCommand(program: Command): void {  program
             console.log(`   Repro: sa import ${source}`);
             return { content: '', fetched: false };
             };
-  
-            // Search from both platforms
+
             const searchResults = await platformFetcher.search(source, { limit: 5 });
-  
+
             if (searchResults.length === 0) {
-              // Fallback to registry download
               const registryUrl = 'http://localhost:3000';
               const downloadUrl = `${registryUrl}/api/skills/${source}/download`;
               console.log(`📦 No results found, trying local registry...`);
-  
+
               try {
                 const response = await fetch(downloadUrl);
                 if (response.ok) {
@@ -388,15 +359,13 @@ export function registerImportCommand(program: Command): void {  program
                   sourceType = 'local-registry';
                 }
               } catch {
-                console.log('⚠ Could not find skill in any registry');
+                console.log('⚠️ Could not find skill in any registry');
               }
             } else if (searchResults.length === 1) {
-              // Single result - use it directly
               const found = searchResults[0];
               console.log(`📥 Found: ${found.name} from ${formatSource(found.platform)}`);
               console.log(`   ${found.description}\n`);
-  
-              // Fetch skill content
+
               const contentResult = await loadRemoteContent(found);
               skillPackage = {
                 id: `skill_${Date.now()}`,
@@ -414,21 +383,19 @@ export function registerImportCommand(program: Command): void {  program
               };
               sourceType = found.platform;
               if (!contentResult.fetched) {
-                contentFetchWarning = `   ⚠ Using fallback content for ${found.name}`;
+                contentFetchWarning = `   ⚠️ Using fallback content for ${found.name}`;
               }
             } else {
-              // Multiple results - show all with platform source
               console.log(`📋 Found ${searchResults.length} matching skills:\n`);
               searchResults.forEach((s, i) => {
                 console.log(`  ${i + 1}. ${s.name} from ${formatSource(s.platform)} - ${s.stats.downloads} downloads`);
                 console.log(`     ${s.description}`);
               });
               console.log('');
-  
-              // Use the first result (most popular)
+
               const found = searchResults[0];
               console.log(`📦 Importing: ${found.name} from ${formatSource(found.platform)}\n`);
-  
+
               const contentResult = await loadRemoteContent(found);
               skillPackage = {
                 id: `skill_${Date.now()}`,
@@ -446,26 +413,25 @@ export function registerImportCommand(program: Command): void {  program
               };
               sourceType = found.platform;
               if (!contentResult.fetched) {
-                contentFetchWarning = `   ⚠ Using fallback content for ${found.name}`;
+                contentFetchWarning = `   ⚠️ Using fallback content for ${found.name}`;
               }
             }
           }
         }
-  
+
         if (!skillPackage) {
           throw new Error('Could not load skill from source');
         }
-  
-        // Security scan (unless disabled)
+
         if (options.scan) {
           console.log('\n🔒 Running security scan...');
           const scanResult = securityEvaluator.scan(
             skillPackage.content.systemPrompt,
             skillPackage.manifest.name
           );
-  
+
           if (!scanResult.passed) {
-            console.log('⚠ Security issues detected:');
+            console.log('⚠️ Security issues detected:');
             console.log(`  Risk Level: ${scanResult.riskAssessment.overallRisk}`);
             console.log(`  Issues: ${scanResult.sensitiveInfoFindings.length + scanResult.dangerousOperationFindings.length}`);
             console.log('\n  Run `sa scan <file>` for details.\n');
@@ -473,15 +439,13 @@ export function registerImportCommand(program: Command): void {  program
             console.log('  ✅ Security scan passed\n');
           }
         }
-  
-        // Save to database
+
         const existingRecords = db.getRecords(skillPackage.manifest.name);
         if (existingRecords.length > 0) {
-          console.log(`⚠ Skill "${skillPackage.manifest.name}" already exists. Use --name to import with different name.`);
+          console.log(`⚠️ Skill "${skillPackage.manifest.name}" already exists. Use --name to import with different name.`);
           return;
         }
-  
-        // Determine source label
+
         const getSourceLabel = (type: string, originalSource?: string): string => {
           if (type === 'skills-sh') return 'skills.sh';
           if (type === 'openclaw') return `OpenClaw:${originalSource || ''}`;
@@ -490,7 +454,7 @@ export function registerImportCommand(program: Command): void {  program
           if (type === 'url') return 'URL';
           return type;
         };
-  
+
         db.addRecord({
           id: EvolutionDatabase.generateId(),
           skillName: skillPackage.manifest.name,
@@ -501,7 +465,7 @@ export function registerImportCommand(program: Command): void {  program
           importSource: getSourceLabel(sourceType, source),
           skillPath: skillPath || undefined
         });
-  
+
         const sourceLabel = getSourceLabel(sourceType, source).split(':')[0];
         console.log(`\n✅ Installed successfully!`);
         console.log(`   Skill: ${skillPackage.manifest.name} (v${skillPackage.manifest.version})`);
@@ -509,12 +473,12 @@ export function registerImportCommand(program: Command): void {  program
         if (contentFetchWarning) {
           console.log(contentFetchWarning);
         }
-  
+
         console.log('\n📌 Next Steps:');
         console.log(`   sa info ${skillPackage.manifest.name}       # View skill details`);
         console.log(`   sa evolve ${skillPackage.manifest.name}     # Analyze and optimize`);
         console.log(`   sa log ${skillPackage.manifest.name}        # View version history`);
-  
+
       } catch (error) {
         console.error(`❌ Failed: ${error instanceof Error ? error.message : String(error)}`);
       }

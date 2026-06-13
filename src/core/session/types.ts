@@ -115,16 +115,23 @@ export interface ExtractedError {
 }
 
 /**
- * Pattern identified from sessions
+ * Shared base fields for all pattern types.
  */
-export interface Pattern {
+export interface BasePattern {
   id: string;
-  type: PatternType;
-  skillName?: string;
   frequency: number;
   description: string;
+  examples: Array<{ sessionId: string; timestamp?: Date; context: string }>;
+  confidence: number; // 0-1
+}
+
+/**
+ * Pattern identified from OpenClaw sessions
+ */
+export interface Pattern extends BasePattern {
+  type: PatternType;
+  skillName?: string;
   examples: PatternExample[];
-  confidence: number;  // 0-1
   firstSeen: Date;
   lastSeen: Date;
 }
@@ -357,15 +364,11 @@ export interface ClaudeCodeFileOperation {
 /**
  * Claude Code pattern extracted from sessions
  */
-export interface ClaudeCodePattern {
-  id: string;
+export interface ClaudeCodePattern extends BasePattern {
   type: ClaudeCodePatternType;
   name: string;
-  description: string;
-  frequency: number;
   skillName?: string;
   examples: ClaudeCodePatternExample[];
-  confidence: number;  // 0-1
   metadata?: Record<string, unknown>;
 }
 

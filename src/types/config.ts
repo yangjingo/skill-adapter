@@ -2,10 +2,12 @@
  * Config Types - Type definitions for agent configuration
  */
 
+import type { SupportedPlatform } from './sharing';
+
 /**
- * Supported agent platforms
+ * Supported agent platforms — extends shared pool with 'unknown' fallback.
  */
-export type AgentPlatform = 'claude-code' | 'openclaw' | 'cline' | 'cursor' | 'windsurf' | 'unknown';
+export type AgentPlatform = SupportedPlatform;
 
 /**
  * Agent configuration
@@ -73,6 +75,11 @@ export const PLATFORM_PATHS: Record<AgentPlatform, {
     settingsKeys: ['model']
   },
   'unknown': {
+    configFiles: [],
+    envVars: [],
+    settingsKeys: []
+  },
+  'generic': {
     configFiles: [],
     envVars: [],
     settingsKeys: []

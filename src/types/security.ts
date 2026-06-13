@@ -94,27 +94,23 @@ export interface SecurityScanOptions {
 }
 
 /**
- * Custom detection pattern
+ * Detection pattern definition — also used for custom/user-defined patterns.
+ * Custom patterns may omit `recommendation` and use `string | RegExp` for `pattern`.
  */
-export interface CustomPattern {
+export interface DetectionPattern {
   name: string;
   pattern: string | RegExp;
   type: 'sensitive' | 'dangerous';
   severity: 'high' | 'medium' | 'low';
   description: string;
+  recommendation?: string;
 }
 
 /**
- * Detection pattern definition
+ * Custom detection pattern (alias for DetectionPattern).
+ * @deprecated Use DetectionPattern directly.
  */
-export interface DetectionPattern {
-  name: string;
-  pattern: RegExp;
-  type: 'sensitive' | 'dangerous';
-  severity: 'high' | 'medium' | 'low';
-  description: string;
-  recommendation: string;
-}
+export type CustomPattern = DetectionPattern;
 
 /**
  * Security report format options

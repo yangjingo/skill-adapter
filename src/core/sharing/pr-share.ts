@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import ora from 'ora';
+import { hasCommand } from '../../utils/helpers';
 
 export const DEFAULT_PR_REPO = 'https://github.com/leow3lab/awesome-ascend-skills';
 
@@ -41,26 +42,7 @@ function buildGitHubTreeUrl(repoSlug: string, branchName: string): string {
   return `https://github.com/${repoSlug}/tree/${encodeURIComponent(branchName)}`;
 }
 
-function hasCommand(command: string): boolean {
-  const { spawnSync } = require('child_process');
-  const result = spawnSync(command, ['--version'], {
-    encoding: 'utf-8',
-    shell: false,
-    stdio: 'ignore'
-  });
-  return !result.error && result.status === 0;
-}
-
-function hasGitHubCli(ghBinary: string): boolean {
-  const { spawnSync } = require('child_process');
-  const result = spawnSync(ghBinary, ['--version'], {
-    encoding: 'utf-8',
-    shell: false,
-    stdio: 'ignore'
-  });
-  return !result.error && result.status === 0;
-}
-
+// hasCommand 已从 ../../utils/helpers 导入
 function isGitHubCliAuthenticated(ghBinary: string): boolean {
   const { spawnSync } = require('child_process');
   const result = spawnSync(ghBinary, ['auth', 'status', '--hostname', 'github.com'], {
@@ -252,7 +234,7 @@ export async function shareByPr(params: ShareByPrParams): Promise<boolean> {
     return false;
   }
 
-  if (!hasGitHubCli(ghBinary)) {
+  if (!hasCommand(ghBinary)) {
     console.log(`⚠️  GitHub CLI not found: ${ghBinary}`);
     printGitHubCliGuidance(ghBinary);
   } else if (!isGitHubCliAuthenticated(ghBinary)) {

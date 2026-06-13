@@ -5,10 +5,11 @@
  * Supports both traditional calculation and SA Agent-powered intelligent evaluation
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import ora from 'ora';
 import { MetricsSummary } from './telemetry';
 import { modelConfigLoader } from './model-config-loader';
+import { createAnthropicClient } from '../utils/anthropic-client';
+import { parseJsonFromLlmResponse } from '../utils/llm-parser';
 
 /**
  * Security metrics for evaluation
@@ -68,25 +69,13 @@ interface SAAgentEvaluationResponse {
 }
 
 export class Evaluator {
-  private client: Anthropic | null = null;
+  private client: ReturnType<typeof createAnthropicClient>['client'] = null;
   private modelId: string = 'claude-sonnet-4-6';
 
   constructor() {
-    this.initClient();
-  }
-
-  /**
-   * Initialize SA Agent client from model config
-   */
-  private initClient(): void {
-    const result = modelConfigLoader.load();
-    if (result.success && result.config) {
-      this.client = new Anthropic({
-        apiKey: result.config.apiKey,
-        baseURL: result.config.baseUrl,
-      });
-      this.modelId = result.config.modelId;
-    }
+    const { client, modelId } = createAnthropicClient();
+    this.client = client;
+    this.modelId = modelId || this.modelId;
   }
 
   /**
@@ -309,27 +298,14 @@ Please provide evaluation results:`;
    * Parse SA Agent evaluation response
    */
   private parseAgentEvaluation(text: string): SAAgentEvaluationResponse {
-    // Extract JSON from response
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[1]) as SAAgentEvaluationResponse;
-      } catch {}
-    }
-
-    // Try direct JSON parse
-    try {
-      return JSON.parse(text) as SAAgentEvaluationResponse;
-    } catch {
-      // Return default if parsing fails
-      return {
-        metrics: [],
-        overallStatus: 'neutral',
-        conclusion: 'AI evaluation parsing failed',
-        recommendations: [],
-        insights: ''
-      };
-    }
+    const parsed = parseJsonFromLlmResponse<SAAgentEvaluationResponse>(text);
+    return parsed ?? {
+      metrics: [],
+      overallStatus: 'neutral',
+      conclusion: 'AI evaluation parsing failed',
+      recommendations: [],
+      insights: ''
+    };
   }
 
   /**

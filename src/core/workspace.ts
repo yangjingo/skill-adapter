@@ -68,58 +68,58 @@ export class WorkspaceAnalyzer {
     };
 
     // Check for TypeScript
-    if (this.fileExists('tsconfig.json')) {
+    if (this.exists('tsconfig.json')) {
       techStack.languages.push('TypeScript');
       techStack.buildTools.push('tsc');
     }
 
     // Check for JavaScript
-    if (this.fileExists('package.json') && !techStack.languages.includes('TypeScript')) {
+    if (this.exists('package.json') && !techStack.languages.includes('TypeScript')) {
       techStack.languages.push('JavaScript');
     }
 
     // Check for frameworks
-    if (this.fileExists('next.config.js') || this.fileExists('next.config.mjs')) {
+    if (this.exists('next.config.js') || this.exists('next.config.mjs')) {
       techStack.frameworks.push('Next.js');
     }
-    if (this.fileExists('nuxt.config.js') || this.fileExists('nuxt.config.ts')) {
+    if (this.exists('nuxt.config.js') || this.exists('nuxt.config.ts')) {
       techStack.frameworks.push('Nuxt');
     }
-    if (this.fileExists('vue.config.js')) {
+    if (this.exists('vue.config.js')) {
       techStack.frameworks.push('Vue');
     }
-    if (this.fileExists('angular.json')) {
+    if (this.exists('angular.json')) {
       techStack.frameworks.push('Angular');
     }
-    if (this.dirExists('src/app') && this.fileExists('requirements.txt')) {
+    if (this.exists('src/app') && this.exists('requirements.txt')) {
       techStack.frameworks.push('FastAPI');
       techStack.languages.push('Python');
     }
 
     // Check for package manager
-    if (this.fileExists('pnpm-lock.yaml')) {
+    if (this.exists('pnpm-lock.yaml')) {
       techStack.packageManager = 'pnpm';
-    } else if (this.fileExists('yarn.lock')) {
+    } else if (this.exists('yarn.lock')) {
       techStack.packageManager = 'yarn';
-    } else if (this.fileExists('package-lock.json')) {
+    } else if (this.exists('package-lock.json')) {
       techStack.packageManager = 'npm';
     }
 
     // Check for Python
-    if (this.fileExists('requirements.txt') || this.fileExists('pyproject.toml')) {
+    if (this.exists('requirements.txt') || this.exists('pyproject.toml')) {
       techStack.languages.push('Python');
-      if (this.fileExists('pyproject.toml')) {
+      if (this.exists('pyproject.toml')) {
         techStack.buildTools.push('poetry');
       }
     }
 
     // Check for Go
-    if (this.fileExists('go.mod')) {
+    if (this.exists('go.mod')) {
       techStack.languages.push('Go');
     }
 
     // Check for Rust
-    if (this.fileExists('Cargo.toml')) {
+    if (this.exists('Cargo.toml')) {
       techStack.languages.push('Rust');
     }
 
@@ -238,17 +238,10 @@ export class WorkspaceAnalyzer {
   }
 
   /**
-   * Check if a file exists
+   * Check if a file or directory exists
    */
-  private fileExists(filename: string): boolean {
-    return fs.existsSync(path.join(this.rootPath, filename));
-  }
-
-  /**
-   * Check if a directory exists
-   */
-  private dirExists(dirpath: string): boolean {
-    return fs.existsSync(path.join(this.rootPath, dirpath));
+  private exists(pathSegment: string): boolean {
+    return fs.existsSync(path.join(this.rootPath, pathSegment));
   }
 
   /**

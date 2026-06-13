@@ -2,9 +2,10 @@
  * SA Agent Evolution Engine - SA Agent-powered skill evolution
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { modelConfigLoader } from '../model-config-loader';
 import { buildEvolutionPrompt, buildSummaryPrompt } from './prompts';
+import { createAnthropicClient } from '../../utils/anthropic-client';
+import { parseJsonFromLlmResponse } from '../../utils/llm-parser';
 import type { SessionEvidenceContext } from './prompts';
 
 /**
@@ -67,22 +68,13 @@ export interface SAAgentEvolutionContext {
  * SA Agent Evolution Engine
  */
 export class SAAgentEvolutionEngine {
-  private client: Anthropic | null = null;
+  private client: ReturnType<typeof createAnthropicClient>['client'] = null;
   private modelId: string = 'claude-sonnet-4-6';
 
   constructor() {
-    this.initClient();
-  }
-
-  private initClient(): void {
-    const result = modelConfigLoader.load();
-    if (result.success && result.config) {
-      this.client = new Anthropic({
-        apiKey: result.config.apiKey,
-        baseURL: result.config.baseUrl,
-      });
-      this.modelId = result.config.modelId;
-    }
+    const { client, modelId } = createAnthropicClient();
+    this.client = client;
+    this.modelId = modelId || this.modelId;
   }
 
   /**
@@ -132,29 +124,8 @@ export class SAAgentEvolutionEngine {
    * Parse SA Agent response to recommendations
    */
   private parseRecommendations(text: string): SAAgentRecommendation[] {
-    // Extract JSON from response
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[1]) as SAAgentResponse;
-        return parsed.recommendations || [];
-      } catch {}
-    }
-
-    // Try direct JSON parse
-    try {
-      const parsed = JSON.parse(text) as SAAgentResponse;
-      return parsed.recommendations || [];
-    } catch {
-      const objectMatch = text.match(/\{[\s\S]*"recommendations"[\s\S]*\}/);
-      if (objectMatch) {
-        try {
-          const parsed = JSON.parse(objectMatch[0]) as SAAgentResponse;
-          return parsed.recommendations || [];
-        } catch {}
-      }
-      return [];
-    }
+    const parsed = parseJsonFromLlmResponse<SAAgentResponse>(text);
+    return parsed?.recommendations ?? [];
   }
 
   private async generateRecommendationsLoop(
@@ -237,10 +208,6 @@ export class SAAgentEvolutionEngine {
       }
 
       const recommendations = this.parseRecommendations(fullText);
-      if (recommendations.length === 0 && fullText) {
-        console.log('[DEBUG] fullText length:', fullText.length);
-        console.log('[DEBUG] fullText preview:', fullText.slice(0, 300));
-      }
       return recommendations;
     } catch (error: any) {
       throw new Error(`SA Agent request failed: ${error.message}`);

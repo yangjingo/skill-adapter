@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { maskApiKey } from '../utils/helpers';
+
 import {
   EvolutionDatabase,
   EvolutionRecord,
@@ -368,12 +370,6 @@ function emptySessionEvidence(): SessionEvidenceBundle {
     keywords: [],
     grepTerms: [],
   };
-}
-
-function maskApiKey(key: string): string {
-  if (!key) return '';
-  if (key.length <= 14) return '***';
-  return `${key.slice(0, 10)}...${key.slice(-4)}`;
 }
 
 function formatSummary(summary: ReturnType<typeof summarizeRecommendationPriorities>, count: number): string {

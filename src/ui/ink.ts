@@ -1,6 +1,7 @@
 import type { RenderCommandResultOptions, RenderCommandResultOutcome } from '../types/ui';
 import { ResultView, renderResultViewText } from './result-view';
 import type { InkRuntime } from './result-view';
+import { safeImport, normalizeReact, type NormalizedReact } from '../utils/helpers';
 
 interface InkRenderInstance {
   waitUntilExit?: () => Promise<void>;
@@ -89,30 +90,7 @@ export async function loadInkSupport(): Promise<LoadedInkSupport | null> {
   };
 }
 
-async function safeImport<T>(moduleName: string): Promise<T | null> {
-  try {
-    return await import(moduleName) as T;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeReact(moduleValue: Record<string, unknown> | null): InkRuntime['React'] | null {
-  if (!moduleValue) {
-    return null;
-  }
-
-  const candidate = (moduleValue.default as unknown) ?? moduleValue;
-  if (candidate && typeof (candidate as { createElement?: unknown }).createElement === 'function') {
-    return candidate as InkRuntime['React'];
-  }
-
-  if (typeof moduleValue.createElement === 'function') {
-    return moduleValue as unknown as InkRuntime['React'];
-  }
-
-  return null;
-}
+// safeImport 和 normalizeReact 已从 ../utils/helpers 导入
 
 function chooseOutputStream(
   result: Parameters<typeof renderResultViewText>[0],
