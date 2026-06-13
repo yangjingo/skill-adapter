@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Skill-Adapter: Engineering Theater (Updated)</title>
+    <!-- Assets -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.7/katex.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.7/katex.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #FFFFFF;
+            --grid-line: #FAFAFA;
+            --main-color: #1E1E1E;
+            --accent-claude: #d97757;
+            --item-bg: rgba(217, 119, 87, 0.05);
+            --strong-bg: rgba(217, 119, 87, 0.12);
+            --font-hand: 'Gochi Hand', cursive;
+            --font-mono: 'JetBrains Mono', monospace;
+            --shadow: 12px 12px 0px #1E1E1E;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .reveal { font-family: var(--font-hand); color: var(--main-color); }
+        .reveal .slides { text-align: left; }
+
+        a { color: var(--accent-claude) !important; text-decoration: none !important; }
+        a:hover { opacity: 0.7; text-decoration: underline !important; }
+
+        .header-layer { border-bottom: 8px solid var(--main-color); margin-bottom: 40px; padding-bottom: 20px; }
+        .header-layer h2 { font-family: var(--font-hand) !important; font-weight: 800; font-size: clamp(2.2rem, 5vw, 4rem) !important; margin: 0 !important; color: var(--main-color) !important; line-height: 1.2 !important; text-transform: capitalize; }
+
+        .canvas-layer { display: grid; grid-template-columns: 65% 35%; gap: 40px; align-items: start; min-height: 450px; }
+        .canvas-layer.push-left { display: flex !important; justify-content: flex-start !important; align-items: center !important; width: 100%; min-height: 400px; padding-left: 5%; }
+
+        .canvas-text { font-size: clamp(1.1rem, 2.4vw, 2.2rem); line-height: 1.3; }
+        .canvas-text ul { list-style: none; padding: 0; margin: 0; display: inline-block; text-align: left; }
+        .canvas-text li { margin-bottom: 20px; position: relative; padding: 12px 12px 12px 50px; border-radius: 8px; transition: background 0.2s ease; }
+        .canvas-text li:hover { background: var(--item-bg); }
+        .canvas-text li::before { content: "→"; position: absolute; left: 12px; font-weight: 800; color: var(--accent-claude); }
+
+        .no-bullet .canvas-text li { padding-left: 20px; }
+        .no-bullet .canvas-text li::before { content: ""; }
+
+        strong { background: var(--strong-bg); padding: 2px 8px; border-radius: 4px; display: inline-block; transform: rotate(-0.5deg); font-weight: 800; }
+
+        .visual-box { border: 6px solid var(--main-color); background: #fff; height: 380px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: var(--shadow); position: relative; padding: 20px; overflow: hidden; }
+        /* 
+           visual-box 内的图片统一用绝对定位 + CSS 变量微调。
+           你只需要在对应 visual-box 上改 data-left/data-top/data-dx/data-dy/data-scale/data-width/data-height 即可。 
+        */
+        .visual-figure {
+            position: absolute;
+            left: var(--left, 50%);
+            top: var(--top, 50%);
+            transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--scale, 1));
+            width: var(--width, auto);
+            height: var(--height, auto);
+            max-width: calc(100% - 20px);
+            max-height: calc(100% - 20px);
+            object-fit: contain;
+        }
+        .visual-placeholder { font-size: 0.9rem; color: #888; text-align: center; font-family: var(--font-mono); }
+        .visual-placeholder b { color: var(--main-color); display: block; margin-bottom: 10px; font-size: 1.1rem; }
+
+        .code-container { border: 4px solid var(--main-color); background: #1E1E1E; padding: 25px; box-shadow: var(--shadow); border-radius: 8px; width: 100%; margin-top: 20px; }
+        pre { margin: 0 !important; background: transparent !important; }
+        code { font-family: var(--font-mono) !important; font-size: 1.1rem !important; color: #d4d4d4 !important; }
+        .code-keyword { color: var(--accent-claude); font-weight: bold; }
+
+        .math-container { border: 4px solid var(--accent-claude); background: #fff; padding: 30px 20px; box-shadow: var(--shadow); border-radius: 8px; text-align: center; font-size: 2rem; width: 100%; }
+
+        .pulse-layer { position: absolute; bottom: 10px; left: 55px; background: #fff; border: 6px solid var(--main-color); padding: 20px 40px; transform: rotate(-1.5deg); box-shadow: var(--shadow); font-weight: 800; font-size: clamp(0.9rem, 2vw, 1.8rem); z-index: 10; max-width: 60%; }
+
+        .ui-label { position: absolute; top: 10px; right: 15px; font-family: var(--font-hand); font-size: 1.1rem; opacity: 0.3; letter-spacing: 2px; text-transform: uppercase; }
+        .footer-metadata { position: absolute; bottom: 25px; left: 5%; font-family: var(--font-hand); font-size: 0.9rem; opacity: 0.4; letter-spacing: 1px; display: flex; gap: 30px; }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+            
+            <!-- 00 Cover -->
+            <section data-transition="none">
+                <div class="header-layer" style="border-bottom: none; padding-left: 5%; margin-top: 10%;">
+                    <div class="ui-label">00 / Identity</div>
+                    <h1 style="font-size: clamp(3.5rem, 8vw, 6rem); font-weight: 800; margin: 0; line-height: 1.1;">Skill-Adapter</h1>
+                    <h2 style="margin-top: 40px; font-size: clamp(1.5rem, 3.5vw, 3rem);">Evolution Protocol for the <strong>Agentic Era</strong></h2>
+                    <div style="margin-top: 60px; font-size: 1.6rem; opacity: 0.8; display: flex; flex-wrap: wrap; gap: 40px;">
+                        <span>Author: <strong>Yang Jing</strong></span>
+                        <span>Version: <strong>v0.1.3</strong></span>
+                        <span>Date: <strong>2026.03.30</strong></span>
+                    </div>
+                    <div style="margin-top: 25px; font-size: 1.1rem; opacity: 0.6;">Source: <a href="https://github.com/yangjingo/skill-adapter" target="_blank">github.com/yangjingo/skill-adapter</a></div>
+                </div>
+            </section>
+
+            <!-- 01 Context -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">01 / Context</div><h2>Evolution: Beyond Ephemeral Chats</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>现状</strong>: 开发者 90% 的工程直觉都随着 Chat 窗口的关闭而彻底“蒸发”。</li>
+                            <li><strong>痛点</strong>: 公共 Skill 在私有环境下经常“水土不服”，难以跨越落地的“最后一公里”。</li>
+                            <li><strong>愿景</strong>: 打造无缝的 <strong>Adapter Layer</strong>，让每一次对话都成为进化燃料。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1" data-width="720px">
+                        <!-- data-img 你可以直接改成 figures/figN.png 或 figures/figN.jpg -->
+                        <img class="visual-figure" 
+                             data-img="figures/fig1.jpg"
+                             alt="Nano Banano Logic Sketch: Skill Evolution Funnel">
+                        <div class="visual-placeholder" style="display:block;">
+                            <b>[Image: 技能演进逻辑图]</b>
+                            <p style="font-size: 0.8rem;">(把 data-img 替换成对应的 `figures/figN.*` 即可)</p>
+                            <p style="margin-top: 10px; opacity: 0.6;">Nano Banano Style: Funnel catching preferences into Workspace.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 对话不应只是消耗。如果它不能让 Skill 进化，那就是在浪费算力。 」</div>
+                <div class="footer-metadata"><span>Yang Jing</span> | <span>Skill-Adapter v0.1.3</span></div>
+            </section>
+
+            <!-- 02 Agenda -->
+            <section data-transition="none" class="no-bullet">
+                <div class="header-layer"><div class="ui-label">02 / Agenda</div><h2>Agenda: Deconstructing Evolution</h2></div>
+                <div class="canvas-layer push-left">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>Q1</strong>: 为什么现有的 Skill 机制无法处理深度工程中的“变数”？</li>
+                            <li><strong>Q2</strong>: 为什么 <strong>CLI</strong> 是 Agent 与本地环境最无歧义的交互协议？</li>
+                            <li><strong>Q3</strong>: 深度拆解：感知 (Info)、演进 (Evolve) 与风控 (Scan) 的逻辑。</li>
+                            <li><strong>Q4</strong>: 典型场景、快速上手以及借助 Claude Code 开发的底层复盘。</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 03 Motivation -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">03 / Motivation</div><h2>Motivation: The Cost of Amnesia</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>盲目</strong>: Skill 的改动效果无法量化评估，收益全凭“感觉”。</li>
+                            <li><strong>风险</strong>: 导入外部脚本如同开盲盒，存在潜在的 <strong>权限/安全</strong> 隐患。</li>
+                            <li><strong>断层</strong>: 公共 Skill 无法感知宿主机的 NPU/GPU 等物理环境差异。</li>
+                            <li><strong>损耗</strong>: 每次重开会话都要重复解释同样的习惯，认知摩擦极高。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig2.png" alt="Nano Banano Sketch: Session Logs memory evaporation">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            "Session Logs" bucket leaking knowledge; evaporated into "Forgotten" clouds.
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 拒绝“一次性”知识，我们需要可积累的工程复利。 」</div>
+            </section>
+
+            <!-- 04 Philosophy -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">04 / Philosophy</div><h2>Philosophy: Why Choose CLI?</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>Agent 原生</strong>: 对于 LLM 而言，<strong>Bash</strong> 是沟通物理世界最简洁的协议。</li>
+                            <li><strong>资源效率</strong>: CLI 极省 Token，相比 MCP 协议，通信载荷更轻。</li>
+                            <li><strong>组合力量</strong>: 像乐高一样可脚本化，能够无缝级联多个原子化的 Skill。</li>
+                            <li><strong>趋势</strong>: 协同软件纷纷转向 CLI 界面，这是面向 Agent 交互的终局。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig3.png" alt="Nano Banano Sketch: MCP vs CLI">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Messy "API/Web", heavy "MCP" block, and a sharp "CLI" sword hitting "Agent Action".
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 复杂是 Agent 的敌人，而 CLI 是 Agent 的利刃。 」</div>
+            </section>
+
+            <!-- 05 sa info -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">05 / CLI Demo</div><h2>sa info: Observation & Insight</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>自动扫描</strong>: 自动识别并挂载 ClaudeCode/OpenClaw 的活跃工作空间。</li>
+                            <li><strong>环境探测</strong>: 实时获取当前模型、Token 消耗倾向及环境依赖栈。</li>
+                            <li><strong>详情透视</strong>: 深度解析 Skill 元数据，量化其与本地环境的 <strong>匹配度</strong>。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig4.png" alt="Nano Banano Sketch: Radar scanning folders">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Radar scanning folders. Terminal showing: "Skill A [OK]", "Skill B [CONFLICT]".
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 在优化之前，先看清你的工程全貌。 」</div>
+            </section>
+
+            <!-- 06 sa evolve -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">06 / CLI Demo</div><h2>sa evolve: Contextual Evolution</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>Workspace 感知</strong>: 结合本地 Identity.md 注入上下文，拒绝“脑补”。</li>
+                            <li><strong>特征嗅探</strong>: 基于 <strong>Keyword Grep</strong> 策略精准检索 Session 报错轨迹。</li>
+                            <li><strong>安全变更</strong>: 默认不执行 --apply，支持通过 --log 预览每一行变更。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig5.png" alt="Nano Banano Sketch: Evolution using session history">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Magnifying glass extracting puzzle piece from "Session History" into "Skill" puzzle.
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 进化不是盲目覆盖，而是基于上下文的精准对齐。 」</div>
+            </section>
+
+            <!-- 07 sa scan -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">07 / CLI Demo</div><h2>sa scan: Security & Governance</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>网络脱钩</strong>: 自动识别并去除 Skill 中硬编码的代理，确保网络中立。</li>
+                            <li><strong>指令过滤</strong>: 拦截 rm -rf / 或高危 sudo 等可能导致破坏的指令。</li>
+                            <li><strong>供应链审计</strong>: 确保从社区导入的 Skill 经过了严格的 <strong>静态扫描</strong>。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig6.png" alt="Nano Banano Sketch: Security shield blocking risky commands">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Shield blocking "sudo rm" hammer. Scissors cutting "Hardcoded Proxy" wire.
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 信任但不放任。安全是工程化的第一前提。 」</div>
+            </section>
+
+            <!-- 08 sa share -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">08 / CLI Demo</div><h2>sa share: Ecosystem Synergy</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>本地归档</strong>: 支持一键导出为 .zip 技能包，方便团队内部离线分发。</li>
+                            <li><strong>云端协同</strong>: 直接针对 GitHub 仓库生成 <strong>Pull Request</strong> 实现回馈。</li>
+                            <li><strong>标准化</strong>: 确保导出的 Skill 符合开源标准，降低复用门槛。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig7.png" alt="Nano Banano Sketch: Local skill export and PR upstream">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Local Skill splitting into "Team ZIP" and "GitHub PR to Upstream".
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 让优化的成果走出本地，完成从私有到公有的进化闭环。 」</div>
+            </section>
+
+            <!-- 09 Scenarios -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">09 / Scenarios</div><h2>Scenarios: Engineering Practice</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>团队标准</strong>: 建立内部私有库，统一 Skill 质量门槛，减少协作噪音。</li>
+                            <li><strong>环境迁移</strong>: 让 Skill 动态贴合当前项目栈（如 CUDA 切换至 Ascend）。</li>
+                            <li><strong>平台治理</strong>: 在 Claude Code 与 OpenClaw 间实现逻辑对齐。</li>
+                            <li><strong>极简入门</strong>: 无需配置复杂的 Model，通过 <strong>Next Tips</strong> 引导上手。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig8.png" alt="Nano Banano Sketch: Developer team community loop">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Ecosystem loop: Developer -> Team -> Community. Each with puzzle pieces.
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 场景定义功能，标准定义质量。 」</div>
+            </section>
+
+            <!-- 10 Quick Start -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">10 / Quick Start</div><h2>Quick Start: Minimalist Setup</h2></div>
+                <div class="canvas-layer push-left">
+                    <div class="canvas-text" style="width: 100%;">
+                        <ul>
+                            <li><strong>Zero Model Config</strong>: 甚至不用配置 Claude 模型即可开始治理本地 Skill。</li>
+                            <li><strong>Simplicity First</strong>: 精简命令集，只保留核心逻辑，降低心智负担。</li>
+                            <li><strong>Progressive Tips</strong>: 通过 <strong>Next Tips</strong> 机制完成“发现-优化-分享”闭环。</li>
+                        </ul>
+                        <div class="code-container">
+                            <pre><code><span style="color: #6a9955;">// Install globally with one command</span>
+$ <span class="code-keyword">npm</span> install -g @yangjingo/skill-adapter</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 好的工具应该像空气一样，上手即用，无感存在。 」</div>
+            </section>
+
+            <!-- 11 Experience -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">11 / Experience</div><h2>Experience: Human-Agent Synergy</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>Development</strong>: 45 Commits | 47 Files | <strong>65%</strong> TODO 完成度。</li>
+                            <li><strong>Boundaries</strong>: 测试用来兜底，这里的“测试人员”必须是<strong>人</strong>。</li>
+                            <li><strong>CLI Rules</strong>: 严禁交互死锁；输出必须是 <strong>结构化 JSON</strong>。</li>
+                            <li><strong>Learning</strong>: 向 Agent 学习如何节省上下文，实现深度磨合。</li>
+                        </ul>
+                    </div>
+                    <div class="visual-box" data-left="50%" data-top="50%" data-dx="0px" data-dy="0px" data-scale="1">
+                        <img class="visual-figure" data-img="figures/fig9.png" alt="Nano Banano Sketch: Human-agent synergy final check">
+                        <div class="visual-placeholder">
+                            <b>Nano Banano Sketch</b>
+                            Robot "Claude Code" typing; Human standing on top holding "Final Check" lever.
+                        </div>
+                    </div>
+                </div>
+                <div class="pulse-layer">「 在 Agent 时代，人是逻辑的最后防线。干中学是唯一的进化路径。 」</div>
+            </section>
+
+            <!-- 12 Summary -->
+            <section data-transition="none">
+                <div class="header-layer"><div class="ui-label">12 / Summary</div><h2>Summary: The Future of Skills</h2></div>
+                <div class="canvas-layer">
+                    <div class="canvas-text">
+                        <ul>
+                            <li><strong>Roadmap</strong>: M1-M2 (Decoupling) | M3-M4 (Autonomous AIE)。</li>
+                            <li><strong>Position</strong>: Skill-Adapter 是为 AI 技能提供的 <strong>工程管理层</strong>。</li>
+                            <li><strong>Logic</strong>: 保持轻量，持续重构。为人与 Agent 打造高效工作协议。</li>
+                        </ul>
+                    </div>
+                    <div class="math-container" id="formula-final"></div>
+                </div>
+                <div class="pulse-layer">「 好的 Skill 应当像代码一样，随着工程共同生长。 」</div>
+            </section>
+
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.js"></script>
+    <script>
+        // Initialize KaTeX
+        const el = document.getElementById('formula-final');
+        if(el) katex.render("P(\\text{Success}) \\propto \\frac{\\text{Logic}}{\\text{Context Drift}}", el, { throwOnError: false });
+
+        // visual-box 图片加载与位置变量注入
+        (function initVisualBoxes(){
+            const boxes = document.querySelectorAll('.visual-box');
+            const varMap = [
+                ['--left', 'data-left'],
+                ['--top', 'data-top'],
+                ['--dx', 'data-dx'],
+                ['--dy', 'data-dy'],
+                ['--scale', 'data-scale'],
+                ['--width', 'data-width'],
+                ['--height', 'data-height'],
+            ];
+
+            boxes.forEach((box) => {
+                const img = box.querySelector('img.visual-figure');
+                const placeholder = box.querySelector('.visual-placeholder');
+                if(!img) return;
+
+                // 默认：placeholder 显示，图片隐藏（成功后再切换）
+                if(placeholder) placeholder.style.display = 'block';
+                img.style.display = 'none';
+
+                // 注入 CSS 变量（允许你在 HTML 里直接调位置）
+                varMap.forEach(([cssVar, dataKey]) => {
+                    const v = box.getAttribute(dataKey);
+                    if(v !== null && v !== ''){
+                        box.style.setProperty(cssVar, v);
+                    }
+                });
+
+                const dataImg = img.getAttribute('data-img') || '';
+                if(dataImg.trim()){
+                    img.src = dataImg.trim();
+                } else {
+                    return;
+                }
+
+                img.addEventListener('load', () => {
+                    img.style.display = 'block';
+                    if(placeholder) placeholder.style.display = 'none';
+                }, { once: true });
+
+                img.addEventListener('error', () => {
+                    img.style.display = 'none';
+                    if(placeholder) placeholder.style.display = 'block';
+                }, { once: true });
+            });
+        })();
+        
+        // Initialize Reveal.js
+        Reveal.initialize({ 
+            hash: true, 
+            center: true, 
+            transition: 'none', 
+            width: 1400, 
+            height: 900, 
+            margin: 0.05,
+            embedded: false
+        });
+    </script>
+</body>
+</html>
