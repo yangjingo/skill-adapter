@@ -18,12 +18,8 @@ import {
 import {
   analyzeSkillStaticContent,
   loadTrackedSkill,
-  printEvolutionNextSteps,
-  printEvolutionRuntimeStatus,
-  printRecommendationSummaryTable,
   summarizeRecommendationPriorities,
 } from '../core/evolution/cli-helpers';
-import { createEvolveLiveSession, EvolveLiveSession } from '../ui/evolve-live';
 import type { SessionEvidenceBundle } from '../core/session/types';
 
 type EvolutionContext = Awaited<ReturnType<typeof evolutionEngine.buildEvolutionContext>>;
@@ -31,7 +27,7 @@ type Recommendation = EvolutionRecommendation | SAAgentRecommendation;
 
 interface EvolutionReporter {
   isLive: boolean;
-  phase: (phase: Parameters<EvolveLiveSession['phase']>[0], detail?: string) => void;
+  phase: (phase: string, detail?: string) => void;
   log: (line: string) => void;
   thinking: (chunk: string) => void;
   recommendSummary: (text: string) => void;
@@ -94,20 +90,8 @@ export function registerEvolveCommand(program: Command): void {
           }
         }
 
-        if (!reporter.isLive) {
-          printEvolutionRuntimeStatus(
-            {
-              configured: modelStatus.configured,
-              source: modelStatus.source,
-              model: modelStatus.model,
-              endpoint: modelStatus.endpoint,
-              maskedApiKey,
-              aiReady: useAI,
-            },
-            isVerbose,
-          );
-        } else {
-          reporter.log(`Model: configured=${modelStatus.configured} source=${modelStatus.source} model=${modelStatus.model}`);
+        if (isVerbose) {
+          console.log(`Model: configured=${modelStatus.configured} source=${modelStatus.source} model=${modelStatus.model} apiKey=${maskedApiKey} aiReady=${useAI}`);
           reporter.log(`Endpoint: ${modelStatus.endpoint || 'not configured'}`);
           if (maskedApiKey) {
             reporter.log(`API key: ${maskedApiKey}`);
@@ -246,9 +230,12 @@ export function registerEvolveCommand(program: Command): void {
           if (isVerbose && allRecommendations.length > 0) {
             printVerboseRecommendations(allRecommendations);
           } else {
-            printRecommendationSummaryTable(summary);
+            console.log(`Recommendations: total=${summary.total} high=${summary.high} medium=${summary.medium} low=${summary.low}`);
           }
-          printEvolutionNextSteps(allRecommendations.length > 0);
+          if (allRecommendations.length > 0) {
+            console.log(`${'='.repeat(40)}`);
+            console.log('To apply: sa evolve <skill> --apply');
+          }
         }
 
         reporter.phase('apply', options.apply ? 'Applying changes' : 'Preview only');
@@ -283,42 +270,20 @@ export function registerEvolveCommand(program: Command): void {
     });
 }
 
-async function createEvolutionReporter(options: {
+function createEvolutionReporter(options: {
   skillName: string;
   verbose: boolean;
   apply: boolean;
-}): Promise<EvolutionReporter> {
-  const live = await createEvolveLiveSession({
-    skillName: options.skillName,
-    verbose: options.verbose,
-    apply: options.apply,
-  });
-
-  if (live) {
-    return {
-      isLive: true,
-      phase: live.phase,
-      log: live.log,
-      thinking: live.thinking,
-      recommendSummary: live.recommendSummary,
-      applySummary: live.applySummary,
-      fail: live.fail,
-      finish: live.finish,
-      stop: live.stop,
-    };
-  }
-
+}): EvolutionReporter {
   return {
     isLive: false,
     phase: (_phase, detail) => {
-      if (detail) {
+      if (detail && options.verbose) {
         console.log(`\n== ${detail} ==`);
       }
     },
     log: (line) => console.log(line),
-    thinking: (chunk) => {
-      process.stdout.write(chunk);
-    },
+    thinking: (chunk) => { process.stdout.write(chunk); },
     recommendSummary: (text) => console.log(text),
     applySummary: (text) => console.log(text),
     fail: (message) => console.error(message),

@@ -211,5 +211,17 @@ export function printCommandResult<T>(result: CommandResult<T>, options: Command
   const rendered = renderCommandResult(result, options.format ?? 'text', options);
   const write = result.success ? options.stdout ?? console.log : options.stderr ?? console.error;
   write(rendered);
+
+  if (!result.success) {
+    process.exitCode = result.error.exitCode ?? 1;
+  }
+
   return rendered;
+}
+
+/**
+ * Resolve output format from options. Returns 'json' if --json was passed, 'text' otherwise.
+ */
+export function resolveFormat(options: { json?: boolean }): 'json' | 'text' {
+  return options.json ? 'json' : 'text';
 }

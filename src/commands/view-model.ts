@@ -1,77 +1,15 @@
-import type { CommandResult } from '../types/ui';
 import type { EvolutionRecord } from '../core/database';
 import { renderEvolutionSummary } from '../core/summary';
 
-export interface InitCommandViewInput {
-  saved: boolean;
-  configPath: string;
-  config: {
-    skillsRepo: string;
-    registryUrl: string;
-    defaultPlatform: string;
-  };
-  model: {
-    configured: boolean;
-    source?: string;
-    model?: string;
-    endpoint?: string;
-    apiKeyMasked?: string;
-  };
-}
-
-function formatConfigDetails(input: InitCommandViewInput): string {
-  const lines: string[] = [
-    `Skills Repo: ${input.config.skillsRepo}`,
-    `Registry: ${input.config.registryUrl}`,
-    `Platform: ${input.config.defaultPlatform}`,
-    `Config File: ${input.configPath}`,
-    '',
-    'AI Model:',
-  ];
-
-  if (input.model.configured) {
-    lines.push(`  Status: ✅ Configured`);
-    if (input.model.source) lines.push(`  Provider: ${input.model.source}`);
-    if (input.model.model) lines.push(`  Model: ${input.model.model}`);
-    if (input.model.endpoint) lines.push(`  Endpoint: ${input.model.endpoint}`);
-    lines.push(`  API Key: ${input.model.apiKeyMasked || '****'}`);
-  } else {
-    lines.push('  Status: ⚠️  Not configured');
-    lines.push('  Run `sa init` to see setup guide.');
-  }
-
-  return lines.join('\n');
-}
-
-export function buildInitCommandView(input: InitCommandViewInput): CommandResult {
-  const summary = input.saved ? 'Configuration saved' : 'Current configuration';
-  const details = formatConfigDetails(input);
-
-  return {
-    status: 'success',
-    title: 'Skill-Adapter Configuration',
-    summary,
-    details,
-    data: {
-      config: input.config,
-      model: input.model,
-      saved: input.saved,
-    },
-    nextSteps: input.model.configured
-      ? [
-          'sa config --help',
-          'sa evolve <skill-name>',
-          'sa summary <skill-name>',
-        ]
-      : [
-          'sa init --show',
-          'Configure Anthropic credentials in ~/.claude/settings.json',
-          'Set ANTHROPIC_AUTH_TOKEN and ANTHROPIC_DEFAULT_SONNET_MODEL',
-        ],
-  };
-}
-
-export function buildSummaryCommandView(skillName: string, records: EvolutionRecord[]): CommandResult {
+export function buildSummaryCommandView(skillName: string, records: EvolutionRecord[]): {
+  status: 'success' | 'failure';
+  title: string;
+  summary?: string;
+  details?: string;
+  data?: unknown;
+  nextSteps?: string[];
+  error?: string;
+} {
   const rendered = renderEvolutionSummary(skillName, records);
 
   if (rendered.status === 'not-found') {

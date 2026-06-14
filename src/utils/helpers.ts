@@ -6,51 +6,18 @@ import * as path from 'path';
 export const COMMUNITY_SKILLS_FEED_URL = 'https://github.com/leow3lab/ascend-skills';
 export const COMMUNITY_CURATED_SKILLS_URL = 'https://github.com/leow3lab/awesome-ascend-skills';
 
-// ── Dynamic import ──────────────────────────────────────────────
-
-export async function safeImport<T>(moduleName: string): Promise<T | null> {
-  try {
-    return await import(moduleName) as T;
-  } catch {
-    return null;
-  }
-}
-
-// ── React normalization ─────────────────────────────────────────
-
-export interface NormalizedReact {
-  createElement: (...args: unknown[]) => unknown;
-  useEffect?: (...args: unknown[]) => unknown;
-  useState?: (...args: unknown[]) => unknown;
-}
-
-export function normalizeReact(moduleValue: Record<string, unknown> | null): NormalizedReact | null {
-  if (!moduleValue) return null;
-
-  const candidate = (moduleValue.default as unknown) ?? moduleValue;
-  if (candidate && typeof (candidate as { createElement?: unknown }).createElement === 'function') {
-    return candidate as NormalizedReact;
-  }
-
-  if (typeof moduleValue.createElement === 'function') {
-    return moduleValue as unknown as NormalizedReact;
-  }
-
-  return null;
-}
-
 // ── Community links ─────────────────────────────────────────────
 
 export function printCommunityLinks(mode: 'radar' | 'targets'): void {
   if (mode === 'radar') {
-    console.log('\n🌐 Community Radar:');
+    console.log('\nCommunity Radar:');
     console.log(`   Shared skills feed: ${COMMUNITY_SKILLS_FEED_URL}`);
     console.log(`   Curated list:       ${COMMUNITY_CURATED_SKILLS_URL}`);
-    console.log('\n💡 Your turn: polish one skill and share it with: sa share <skill-name>');
+    console.log('\nShare with: sa share <skill-name>');
     return;
   }
 
-  console.log('\n🎯 Community Targets:');
+  console.log('\nCommunity Targets:');
   console.log(`   ${COMMUNITY_SKILLS_FEED_URL}`);
   console.log(`   ${COMMUNITY_CURATED_SKILLS_URL}`);
 }
