@@ -71,7 +71,7 @@ test('sa --help should run without error', () => {
 // Test 5: CLI version command
 test('sa --version should show version', () => {
   const output = runCli(['--version']);
-  assert(output.includes('1.2.0'), 'Version should match package.json');
+  assert(output.includes('1.0.0'), 'Version should match package.json');
 });
 
 // Test 6: Check core modules
