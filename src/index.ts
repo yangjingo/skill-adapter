@@ -49,4 +49,4 @@ export { buildEvolutionPrompt, isChineseContent } from './core/evolution';
 export { EvolutionEngine, evolutionEngine, EvolutionContext, EvolutionRecommendation, MemoryRule, BehaviorStyle } from './core/evolution-engine';
 
 // Version
-export const VERSION = '1.2.0';
+export const VERSION = '1.0.0';
